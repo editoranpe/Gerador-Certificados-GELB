@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gerador de Certificados · GELB 32/SC</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/img/flor-de-lis.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@600;700&family=Great+Vibes&family=Montserrat:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&family=Nunito:wght@600;700;900&family=Fredoka:wght@600&family=Merriweather:wght@700&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="login" class="login" hidden>
+    <form class="login-card" id="login-form">
+      <img src="/img/logo-gelb.svg" alt="" width="88" height="88">
+      <h1>Gerador de Certificados</h1>
+      <p>Grupo Escoteiro Leões de Blumenau · GELB 32/SC</p>
+      <label for="login-pass">Senha da diretoria</label>
+      <input id="login-pass" type="password" autocomplete="current-password" required>
+      <p class="form-error" id="login-error" hidden></p>
+      <button class="btn btn-primary btn-lg" type="submit">Entrar</button>
+      <a class="muted-link" href="/validar/">Quero conferir se um certificado é verdadeiro</a>
+    </form>
+  </section>
+
+  <!-- APLICATIVO -->
+  <div id="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <img src="/img/logo-gelb.svg" alt="" width="40" height="40">
+        <div>
+          <strong>Gerador de Certificados</strong>
+          <span>GELB 32/SC</span>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Seções">
+        <button data-tab="emitir" class="active">Emitir certificado</button>
+        <button data-tab="lote">Vários de uma vez</button>
+        <button data-tab="emitidos">Emitidos</button>
+        <button data-tab="config">Configurações</button>
+      </nav>
+      <button class="btn btn-ghost btn-sm" id="logout">Sair</button>
+    </header>
+
+    <main>
+      <!-- ============ EMITIR ============ -->
+      <section id="tab-emitir" class="tab">
+        <div class="emit-grid">
+          <div class="steps">
+            <div class="step">
+              <h2><span class="num">1</span> Que certificado você vai fazer?</h2>
+              <div class="chips" id="category-chips"></div>
+              <div class="models" id="model-buttons"></div>
+            </div>
+
+            <div class="step">
+              <h2><span class="num">2</span> Escolha a aparência</h2>
+              <div class="designs" id="design-options"></div>
+              <div id="standard-options" class="row-wrap">
+                <label class="field-inline">Moldura
+                  <select id="border-style"></select>
+                </label>
+                <label class="check"><input type="checkbox" id="show-watermark"> Flor-de-lis no fundo</label>
+              </div>
+              <p class="hint" id="template-hint" hidden>
+                As informações são escritas por cima da arte.
+                <button class="link" type="button" id="open-layout-editor">Ajustar onde cada informação aparece</button>
+              </p>
+            </div>
+
+            <div class="step">
+              <h2><span class="num">3</span> Preencha os dados</h2>
+              <div class="form-grid">
+                <label class="span-2">Nome do jovem
+                  <input id="f-recipientName" data-field="recipientName" placeholder="Ex.: Gabriel Schmidt Silva" autocomplete="off">
+                </label>
+                <label>Registro UEB (opcional)
+                  <input id="f-recipientRegistration" data-field="recipientRegistration" placeholder="Ex.: 329182-1" autocomplete="off">
+                </label>
+                <div id="extra-fields" class="contents"></div>
+                <label>Cidade
+                  <input id="f-city" data-field="city" placeholder="Blumenau - SC">
+                </label>
+                <label>Data do certificado
+                  <input id="f-date" data-field="date" type="date">
+                </label>
+              </div>
+
+              <fieldset class="signers">
+                <legend>Quem assina</legend>
+                <div id="signer-checks"></div>
+                <p class="hint">Para mudar nomes, cargos ou imagens das assinaturas, use <button class="link" type="button" data-goto="config">Configurações</button>.</p>
+              </fieldset>
+
+              <details class="more">
+                <summary>Quero escrever um texto diferente</summary>
+                <label>Texto do certificado
+                  <textarea id="f-customText" data-field="customText" rows="4"></textarea>
+                </label>
+                <p class="hint">Deixe em branco para usar o texto automático (aparece acima, em cinza).</p>
+              </details>
+            </div>
+
+            <div class="step step-actions">
+              <h2><span class="num">4</span> Imprima ou baixe</h2>
+              <div class="row-wrap">
+                <span class="label-text">Tamanho do papel:</span>
+                <label class="check"><input type="radio" name="paper" value="a4" checked> A4 (21 × 29,7 cm)</label>
+                <label class="check"><input type="radio" name="paper" value="a5"> A5 (14,8 × 21 cm)</label>
+              </div>
+              <label class="check"><input type="checkbox" id="show-qr"> Incluir QR Code para conferir a autenticidade</label>
+              <div class="actions">
+                <button class="btn btn-primary btn-lg" data-emit="print">🖨️ Imprimir</button>
+                <button class="btn btn-secondary btn-lg" data-emit="pdf">⬇️ Baixar PDF</button>
+                <button class="btn btn-ghost" data-emit="png">Baixar imagem (PNG)</button>
+              </div>
+              <p class="status" id="emit-status"></p>
+              <button class="btn btn-ghost btn-sm" id="new-cert" type="button">＋ Começar outro certificado</button>
+            </div>
+          </div>
+
+          <aside class="preview">
+            <div class="preview-card">
+              <div class="preview-head">
+                <strong>Como vai ficar</strong>
+                <span class="code" id="cert-code"></span>
+              </div>
+              <canvas id="preview-canvas" width="1122" height="793"></canvas>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ LOTE ============ -->
+      <section id="tab-lote" class="tab" hidden>
+        <div class="panel narrow">
+          <h2>Vários certificados de uma vez</h2>
+          <p>Usa o mesmo tipo, aparência, data e assinaturas que estão na aba <button class="link" type="button" data-goto="emitir">Emitir certificado</button>:</p>
+          <p class="using" id="batch-using"></p>
+          <label for="batch-text"><strong>Lista de nomes</strong> — um por linha</label>
+          <p class="hint">Se quiser, coloque depois do nome o registro UEB e os responsáveis, separados por vírgula ou ponto e vírgula. Pode colar direto de uma planilha.</p>
+          <textarea id="batch-text" rows="10" placeholder="Gabriel Schmidt Silva, 329182-1, Carlos e Maria Schmidt&#10;Mariana Souza Costa, 318293-2&#10;Matheus Fischer"></textarea>
+          <p class="status" id="batch-count">Nenhum nome ainda.</p>
+          <div class="actions">
+            <button class="btn btn-primary btn-lg" id="batch-print">🖨️ Imprimir todos</button>
+            <button class="btn btn-secondary btn-lg" id="batch-pdf">⬇️ Baixar um PDF com todos</button>
+          </div>
+          <div class="progress" id="batch-progress" hidden><div></div></div>
+          <p class="status" id="batch-status"></p>
+        </div>
+      </section>
+
+      <!-- ============ EMITIDOS ============ -->
+      <section id="tab-emitidos" class="tab" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Certificados emitidos</h2>
+            <input type="search" id="history-search" placeholder="Buscar por nome, registro, modelo ou código">
+          </div>
+          <div id="history-list" class="history"></div>
+        </div>
+      </section>
+
+      <!-- ============ CONFIGURAÇÕES ============ -->
+      <section id="tab-config" class="tab" hidden>
+        <div class="panel">
+          <h2>Dados do grupo</h2>
+          <div class="form-grid">
+            <label class="span-2">Nome do grupo (aparece nos certificados)
+              <input id="s-groupName">
+            </label>
+            <label>Cidade padrão
+              <input id="s-city">
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Logos do layout padrão</h2>
+          <div class="logos">
+            <div class="logo-box">
+              <span class="label-text">Logo da esquerda (do grupo)</span>
+              <img id="s-logoLeft-img" alt="">
+              <div class="row-wrap">
+                <label class="btn btn-secondary btn-sm file-btn">Trocar imagem<input type="file" accept="image/*" data-logo="logoLeft"></label>
+                <button class="btn btn-ghost btn-sm" data-logo-reset="logoLeft">Voltar à original</button>
+              </div>
+            </div>
+            <div class="logo-box">
+              <span class="label-text">Logo da direita (opcional, ex.: Escoteiros SC ou UEL)</span>
+              <img id="s-logoRight-img" alt="">
+              <div class="row-wrap">
+                <label class="btn btn-secondary btn-sm file-btn">Escolher imagem<input type="file" accept="image/*" data-logo="logoRight"></label>
+                <button class="btn btn-ghost btn-sm" data-logo-reset="logoRight">Remover</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Assinaturas</h2>
+          <p class="hint">Marque "assina sempre" para quem deve vir marcado em todo certificado novo. A imagem da assinatura é opcional — sem ela, o nome aparece em letra cursiva.</p>
+          <div id="sig-list" class="sig-list"></div>
+          <button class="btn btn-ghost btn-sm" id="sig-add">＋ Adicionar pessoa que assina</button>
+        </div>
+
+        <div class="settings-save">
+          <button class="btn btn-primary" id="save-settings">Salvar configurações</button>
+          <span class="status" id="settings-status"></span>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Modelos com arte própria</h2>
+            <button class="btn btn-primary btn-sm" id="tpl-new">＋ Enviar novo modelo</button>
+          </div>
+          <p class="hint">Envie a arte de um certificado (PDF ou imagem, de preferência A4 deitado). Depois é só dizer onde vai o nome, a data e as assinaturas — o sistema preenche sozinho.</p>
+          <form id="tpl-form" class="tpl-form" hidden>
+            <div class="form-grid">
+              <label class="span-2">Arquivo (PDF, PNG ou JPG)
+                <input type="file" id="tpl-file" accept="application/pdf,image/png,image/jpeg,image/webp" required>
+              </label>
+              <label class="span-2">Nome do modelo
+                <input id="tpl-name" required placeholder="Ex.: Certificado de Promessa do Lobinho">
+              </label>
+              <label>Categoria
+                <select id="tpl-category"></select>
+              </label>
+              <label>Modelo de certificado
+                <select id="tpl-model"></select>
+              </label>
+              <label class="span-2">Como as informações entram na arte?
+                <select id="tpl-preset">
+                  <option value="centro">Nome grande no centro (diploma)</option>
+                  <option value="linhas">Preencher linhas já impressas (como a Acolhida)</option>
+                </select>
+              </label>
+              <label class="span-2">Descrição (opcional)
+                <input id="tpl-description">
+              </label>
+            </div>
+            <p class="form-error" id="tpl-error" hidden></p>
+            <div class="actions">
+              <button class="btn btn-primary" type="submit" id="tpl-save">Salvar modelo</button>
+              <button class="btn btn-ghost" type="button" id="tpl-cancel">Cancelar</button>
+            </div>
+          </form>
+          <div class="row-wrap">
+            <select id="tpl-filter"></select>
+          </div>
+          <div id="tpl-list" class="tpl-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">Grupo Escoteiro Leões de Blumenau (GELB 32/SC) · Fundado em 1958 · Sempre Alerta para Servir</footer>
+  </div>
+
+  <!-- EDITOR DE POSIÇÕES -->
+  <dialog id="layout-editor" class="editor">
+    <div class="editor-head">
+      <div>
+        <h2>Onde cada informação aparece</h2>
+        <p class="hint">Arraste os quadros sobre a arte. Ligue ou desligue as informações na lista.</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="le-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="le-save">Salvar posições</button>
+      </div>
+    </div>
+    <div class="editor-body">
+      <div class="editor-stage" id="le-stage">
+        <canvas id="le-canvas"></canvas>
+        <div id="le-overlay" class="le-overlay"></div>
+      </div>
+      <div class="editor-side">
+        <div class="row-wrap">
+          <span class="label-text">Começar de:</span>
+          <button class="btn btn-ghost btn-sm" data-preset="centro">Nome no centro</button>
+          <button class="btn btn-ghost btn-sm" data-preset="linhas">Linhas da Acolhida</button>
+        </div>
+        <label>Letra
+          <select id="le-font"></select>
+        </label>
+        <div class="colors" id="le-colors"></div>
+        <div id="le-fields" class="le-fields"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirm" class="confirm">
+    <p id="confirm-text"></p>
+    <div class="actions">
+      <button class="btn btn-ghost" value="no" id="confirm-no">Cancelar</button>
+      <button class="btn btn-danger" value="yes" id="confirm-yes">Sim, excluir</button>
+    </div>
+  </dialog>
+
+  <div id="print-root" aria-hidden="true"></div>
+  <style id="print-page-style"></style>
+
+  <script src="/vendor/qrcode.js"></script>
+  <script src="/vendor/jspdf.umd.min.js"></script>
+  <script src="/vendor/pdf.min.js"></script>
+  <script src="/js/data.js"></script>
+  <script src="/js/render.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

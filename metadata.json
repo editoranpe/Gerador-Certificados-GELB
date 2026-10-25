@@ -1,6 +1,0 @@
-{
-  "name": "Gerador de Certificados - GELB 32/SC",
-  "description": "Sistema de emissão e validação de certificados do Grupo Escoteiro Leões de Blumenau (GELB 32/SC)",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

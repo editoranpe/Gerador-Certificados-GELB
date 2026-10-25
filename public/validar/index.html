@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conferir certificado · GELB 32/SC</title>
+  <link rel="icon" href="/img/flor-de-lis.svg" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .val { max-width: 640px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; }
+    .val-head { background: var(--navy); color: #fff; border-radius: 16px; padding: 24px; text-align: center; border-bottom: 5px solid var(--gold); }
+    .val-head h1 { color: var(--gold); font-size: 1.4rem; margin: 10px 0 6px; }
+    .val-head p { margin: 0; color: #dbe5f5; }
+    .val form { display: flex; gap: 10px; }
+    .val form input { font-family: "Courier New", monospace; font-weight: 700; text-transform: uppercase; }
+    .result { border-radius: 14px; padding: 20px; }
+    .result.ok { background: #ecfdf5; border: 2px solid #34d399; }
+    .result.bad { background: #fef2f2; border: 2px solid #fca5a5; color: #7f1d1d; }
+    .result h2 { margin: 0 0 12px; }
+    .result.ok h2 { color: #065f46; }
+    .result dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+    .result dt { color: var(--muted); font-weight: 600; }
+    .result dd { margin: 0; font-weight: 700; }
+    @media (max-width: 520px) { .val form { flex-direction: column; } .result dl { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="val">
+    <div class="val-head">
+      <img src="/img/logo-gelb.svg" alt="" width="72" height="72">
+      <h1>Conferir certificado</h1>
+      <p>Grupo Escoteiro Leões de Blumenau · GELB 32/SC</p>
+    </div>
+    <form id="f">
+      <input id="code" placeholder="GELB-XXXX-XXXX-XXXX" aria-label="Código do certificado" required>
+      <button class="btn btn-primary" type="submit">Conferir</button>
+    </form>
+    <div id="out"></div>
+  </main>
+  <script>
+    const MONTHS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+    const fmt = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m ? `${+m[3]} de ${MONTHS[+m[2]-1]} de ${m[1]}` : ''; };
+    async function check(code) {
+      const out = document.getElementById('out');
+      out.innerHTML = '<p class="hint">Conferindo…</p>';
+      const res = await fetch('/api/validar/' + encodeURIComponent(code.trim())).catch(() => null);
+      const data = res ? await res.json().catch(() => ({})) : {};
+      if (res && res.ok && data.ok) {
+        const c = data.certificate;
+        out.innerHTML = `<div class="result ok"><h2>✓ Certificado verdadeiro</h2><dl>
+          <dt>Nome</dt><dd>${esc(c.recipient)}</dd>
+          ${c.registration ? `<dt>Registro UEB</dt><dd>${esc(c.registration)}</dd>` : ''}
+          <dt>Certificado</dt><dd>${esc(c.category)} › ${esc(c.model)}</dd>
+          ${c.event_date ? `<dt>Data</dt><dd>${esc(fmt(c.event_date))}</dd>` : ''}
+          <dt>Código</dt><dd>${esc(c.code)}</dd>
+          <dt>Emitido por</dt><dd>Diretoria do GELB 32/SC</dd></dl></div>`;
+      } else if (res && res.status === 404) {
+        out.innerHTML = '<div class="result bad"><h2>Certificado não encontrado</h2><p>Esse código não corresponde a nenhum certificado emitido pelo GELB 32/SC. Confira se foi digitado corretamente.</p></div>';
+      } else {
+        out.innerHTML = '<div class="result bad"><p>Não foi possível conferir agora. Tente novamente em instantes.</p></div>';
+      }
+    }
+    document.getElementById('f').addEventListener('submit', (e) => { e.preventDefault(); check(document.getElementById('code').value); });
+    const c = new URLSearchParams(location.search).get('c');
+    if (c) { document.getElementById('code').value = c; check(c); }
+  </script>
+</body>
+</html>

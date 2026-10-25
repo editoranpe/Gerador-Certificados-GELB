@@ -1,0 +1,32 @@
+# Gerador de Certificados GELB 32/SC (gerador-certificados.geleoesdeblumenau.com.br)
+# Veja o README para publicar e ligar o subdomínio.
+name = "gerador-certificados"
+workers_dev = true
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Páginas, scripts e imagens. Só /api/* passa pelo Worker antes.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "404-page"
+run_worker_first = ["/api/*"]
+
+# Banco: modelos, configurações, histórico e validação dos certificados
+[[d1_databases]]
+binding = "DB"
+database_name = "gelb-certificados-db"
+database_id = "0160d610-ad04-4760-9ca9-d7baf7ffddfe"
+migrations_dir = "migrations"
+
+# Subdomínio oficial do app
+[[routes]]
+pattern = "gerador-certificados.geleoesdeblumenau.com.br"
+custom_domain = true
+
+# Segredos (NÃO coloque aqui):
+#   npx wrangler secret put APP_PASSWORD     (senha da diretoria)
+#   npx wrangler secret put SESSION_SECRET   (texto aleatório com 32+ caracteres)
+
+[observability]
+enabled = true

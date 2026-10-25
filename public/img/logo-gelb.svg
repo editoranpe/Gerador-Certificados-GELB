@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500">
+  <defs>
+    <path id="text-path-top" d="M 80,250 A 170,170 0 0,1 420,250" fill="none" />
+    <path id="text-path-bottom" d="M 420,250 A 170,170 0 0,1 80,250" fill="none" />
+  </defs>
+  <g>
+    <circle cx="250" cy="250" r="235" fill="#FBBF24" stroke="#0F2C59" stroke-width="6" />
+    <circle cx="250" cy="250" r="215" fill="#0F2C59" stroke="#FBBF24" stroke-width="4" />
+    <circle cx="250" cy="250" r="145" fill="#FFFFFF" stroke="#FBBF24" stroke-width="4" />
+    
+    <polygon points="115,145 120,158 134,158 123,167 127,180 115,171 103,180 107,167 96,158 110,158" fill="#FBBF24" />
+    <polygon points="385,145 390,158 404,158 393,167 397,180 385,171 373,180 377,167 366,158 380,158" fill="#FBBF24" />
+    <polygon points="105,305 110,318 124,318 113,327 117,340 105,331 93,340 97,327 86,318 100,318" fill="#FBBF24" />
+    <polygon points="395,305 400,318 414,318 403,327 407,340 395,331 383,340 387,327 376,318 390,318" fill="#FBBF24" />
+
+    <text x="75" y="258" font-family="'Impact', 'Arial Black', sans-serif" font-size="28" font-weight="900" fill="#FBBF24" text-anchor="middle" transform="rotate(-90 75 258)">1958</text>
+    <text x="425" y="258" font-family="'Impact', 'Arial Black', sans-serif" font-size="26" font-weight="900" fill="#FBBF24" text-anchor="middle" transform="rotate(90 425 258)">32 | SC</text>
+
+    <text font-family="'Impact', 'Arial Black', sans-serif" font-size="36" font-weight="900" fill="#FFFFFF" letter-spacing="3">
+      <textPath href="#text-path-top" startOffset="50%" text-anchor="middle">GRUPO ESCOTEIRO</textPath>
+    </text>
+
+    <text font-family="'Impact', 'Arial Black', sans-serif" font-size="34" font-weight="900" fill="#FFFFFF" letter-spacing="2">
+      <textPath href="#text-path-bottom" startOffset="50%" text-anchor="middle">LEÕES DE BLUMENAU</textPath>
+    </text>
+
+    <g transform="translate(130, 125) scale(0.95)">
+      <path d="M 120 30 C 110 10, 90 5, 80 20 C 70 5, 50 10, 45 30 C 30 25, 20 45, 30 65 C 15 75, 10 95, 25 115 C 15 130, 20 150, 40 160 C 35 180, 50 200, 75 205 C 90 220, 120 225, 140 215 C 170 210, 190 190, 200 160 C 215 140, 210 110, 195 90 C 200 70, 185 50, 165 45 C 160 30, 140 20, 120 30 Z" fill="#0F2C59" />
+      <path d="M 60 70 Q 75 60 90 75 Q 70 85 60 70 Z" fill="#FFFFFF" />
+      <path d="M 40 105 Q 30 110 25 100 Q 35 95 40 105 Z" fill="#FFFFFF" />
+      <path d="M 42 120 C 50 120, 55 125, 52 130 C 45 130, 40 125, 42 120 Z" fill="#FFFFFF" />
+      
+      <g transform="translate(45, 150)">
+        <path d="M 0 10 C 30 -5, 80 -5, 110 10 C 105 30, 85 45, 55 45 C 25 45, 5 30, 0 10 Z" fill="#FBBF24" stroke="#0F2C59" stroke-width="3" />
+        <path d="M 15 5 L 30 38 L 45 42 L 25 3 Z" fill="#0F2C59" />
+        <path d="M 55 2 L 70 44 L 85 40 L 70 1 Z" fill="#0F2C59" />
+        <rect x="42" y="38" width="26" height="30" rx="4" fill="#FBBF24" stroke="#0F2C59" stroke-width="3" />
+        <path d="M 55 42 C 52 48 46 50 48 54 C 52 54 53 50 55 46 C 57 50 58 54 62 54 C 64 50 58 48 55 42 Z" fill="#0F2C59" />
+        <path d="M 55 40 L 55 58" stroke="#0F2C59" stroke-width="2" />
+        <path d="M 45 68 L 35 110 L 52 105 L 53 68 Z" fill="#0F2C59" stroke="#FBBF24" stroke-width="2" />
+        <path d="M 57 68 L 58 105 L 75 110 L 65 68 Z" fill="#FBBF24" stroke="#0F2C59" stroke-width="2" />
+      </g>
+    </g>
+  </g>
+</svg>
