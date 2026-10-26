@@ -38,7 +38,7 @@
       </div>
       <nav class="tabs" aria-label="Seções">
         <button data-tab="emitir" class="active">Emitir certificado</button>
-        <button data-tab="lote">Vários de uma vez</button>
+        <button data-tab="lote">Montar impressão</button>
         <button data-tab="emitidos">Emitidos</button>
         <button data-tab="config">Configurações</button>
       </nav>
@@ -136,20 +136,35 @@
 
       <!-- ============ LOTE ============ -->
       <section id="tab-lote" class="tab" hidden>
-        <div class="panel narrow">
-          <h2>Vários certificados de uma vez</h2>
-          <p>Usa o mesmo tipo, aparência, data e assinaturas que estão na aba <button class="link" type="button" data-goto="emitir">Emitir certificado</button>:</p>
-          <p class="using" id="batch-using"></p>
-          <label for="batch-text"><strong>Lista de nomes</strong> — um por linha</label>
-          <p class="hint">Depois do nome, coloque os responsáveis e, se quiser, o registro UEB, separados por vírgula ou ponto e vírgula. Pode colar direto de uma planilha.</p>
-          <textarea id="batch-text" rows="10" placeholder="Gabriel Schmidt Silva, Carlos e Maria Schmidt&#10;Mariana Souza Costa, Pedro e Ana Costa, 318293-2&#10;Matheus Fischer"></textarea>
-          <p class="status" id="batch-count">Nenhum nome ainda.</p>
-          <div class="actions">
-            <button class="btn btn-primary btn-lg" id="batch-print">🖨️ Imprimir todos</button>
-            <button class="btn btn-secondary btn-lg" id="batch-pdf">⬇️ Baixar um PDF com todos</button>
+        <div class="montar">
+          <div class="montar-main">
+            <div class="panel">
+              <h2>Montar impressão</h2>
+              <p class="hint" style="margin-bottom:0">Adicione um bloco para cada certificado (ex.: Acolhida, Progressão Lobinho…) e, dentro dele, os jovens que vão recebê-lo. Saem <strong>4 certificados por folha A4</strong>, com marcas de corte; do 5º em diante, vai para a folha seguinte.</p>
+            </div>
+            <div id="blocks"></div>
+            <button class="btn btn-ghost btn-lg add-block" type="button" id="block-add">＋ Adicionar certificado</button>
           </div>
-          <div class="progress" id="batch-progress" hidden><div></div></div>
-          <p class="status" id="batch-status"></p>
+          <aside class="montar-side">
+            <div class="preview-card">
+              <div class="preview-head">
+                <strong>Folha <span id="sheet-n">1</span> de <span id="sheet-total">1</span></strong>
+                <span class="sheet-nav">
+                  <button class="btn btn-ghost btn-sm" type="button" id="sheet-prev" aria-label="Folha anterior">‹</button>
+                  <button class="btn btn-ghost btn-sm" type="button" id="sheet-next" aria-label="Próxima folha">›</button>
+                </span>
+              </div>
+              <canvas id="sheet-canvas" width="1010" height="714"></canvas>
+              <p class="status" id="batch-count"></p>
+              <div class="actions">
+                <button class="btn btn-primary btn-lg" type="button" id="batch-print">🖨️ Imprimir</button>
+                <button class="btn btn-secondary btn-lg" type="button" id="batch-pdf">⬇️ Baixar PDF</button>
+              </div>
+              <div class="progress" id="batch-progress" hidden><div></div></div>
+              <p class="status" id="batch-status"></p>
+              <button class="link" type="button" id="blocks-clear">Começar do zero</button>
+            </div>
+          </aside>
         </div>
       </section>
 

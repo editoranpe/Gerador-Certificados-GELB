@@ -15,8 +15,11 @@ O app antigo do AI Studio fica guardado na branch `ai-studio-original`.
    3. preencha nome, data e o que mais for pedido (os campos mudam conforme o modelo);
    4. **Imprimir**, **Baixar PDF** (A4 ou A5) ou **Baixar imagem**.
    Ao imprimir/baixar, o certificado fica registrado em *Emitidos* com um código `GELB-XXXX-XXXX-XXXX`.
-2. **Vários de uma vez** — cole uma lista de nomes (um por linha; pode vir de planilha) e gere um único PDF
-   ou imprima todos de uma vez, usando as escolhas feitas na aba *Emitir*.
+2. **Montar impressão** — junte certificados diferentes numa mesma impressão: um bloco por certificado
+   (ex.: Acolhida, Progressão Filhotes, Progressão Lobinho…), cada um com sua data, cidade e assinaturas, e dentro dele
+   os jovens com seus responsáveis (dá para digitar ou colar uma lista de planilha). Saem **4 certificados por folha A4**,
+   com marcas de corte; do 5º em diante, vai para a folha seguinte. A montagem fica guardada no navegador até você
+   clicar em "Começar do zero", e reimprimir não duplica os emitidos.
 3. **Emitidos** — busca, reabre para reimprimir, baixa o PDF de novo ou exclui.
 4. **Configurações** — nome do grupo, cidade, logos (a logo do grupo também aparece no topo, na tela de entrada e na
    página de conferência), quem assina (com imagem da assinatura), **letras** (envio de fontes próprias e letra, cor e
@@ -36,7 +39,7 @@ Todas as funções do original continuam, com menos passos:
 | Modelo em PDF com "modo especialista"/"modo diploma" e ~30 controles deslizantes | Um editor visual: **arrasta** cada informação para o lugar; posições ficam salvas **no modelo** (calibra uma vez só) |
 | Modelo "Acolhida dos Filhotes" embutido | Igual (pode ser excluído e restaurado) |
 | PDF A4/A5, PNG, impressão | Igual — e a impressão sai idêntica ao PDF (antes dependia do navegador redesenhar a página) |
-| Lote: baixava um PDF por pessoa (e baixava sempre o mesmo certificado, por um erro) | Um PDF único com todos ou "imprimir todos" |
+| Lote: baixava um PDF por pessoa (e baixava sempre o mesmo certificado, por um erro) | "Montar impressão": vários certificados diferentes, 4 por folha A4, num PDF único ou impressão direta |
 | Histórico só no navegador de quem emitiu | Histórico no servidor, igual para toda a diretoria |
 | Validação aceitava qualquer código começando com `GELB-` | Validação real pelo banco + **QR Code no certificado** |
 | Login Google + Firebase + Gemini | Uma senha da diretoria; sem Firebase, sem IA |

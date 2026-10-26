@@ -1,7 +1,7 @@
 // Teste de ponta a ponta: rode `npm run dev` (com .dev.vars) e depois `npm run test:e2e`.
 // Usa um banco local; cria certificados e um modelo de teste.
 import { chromium } from 'playwright';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 
 const BASE = process.env.BASE_URL || 'http://localhost:8787';
 const PASS = process.env.APP_PASSWORD || 'diretoria-teste';
@@ -60,7 +60,7 @@ await page.click('[data-design="padrao"]');
 await page.fill('[data-field=nomeEspecialidade]', 'Radioamadorismo');
 await page.selectOption('[data-field=nivelConquistado]', '2');
 await page.waitForTimeout(600);
-await page.locator('.preview-card').screenshot({ path: `${OUT}/02-padrao-especialidade.png` });
+await page.locator('#tab-emitir .preview-card').screenshot({ path: `${OUT}/02-padrao-especialidade.png` });
 const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-emit=png]')]);
 check(dl2.suggestedFilename().endsWith('.png'), 'PNG baixado');
 
@@ -75,25 +75,56 @@ await vpage.waitForSelector('.result');
 check((await vpage.textContent('.result')).includes('não encontrado'), 'código inexistente é recusado');
 await vpage.close();
 
-// Lote
+// Montar impressão: blocos com certificados diferentes, 4 por folha
 await page.click('[data-tab=lote]');
-await page.fill('#batch-text', 'Ana Paula, Ailson Luiz e Liene Maria\nBruno Lima; Raul e Regina; 222222-2\nCarla Dias');
-check((await page.textContent('#batch-count')).includes('3 certificados'), 'lote conta 3 nomes');
-const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#batch-pdf')]);
-await dl3.saveAs(`${OUT}/lote.pdf`);
-check(dl3.suggestedFilename().endsWith('.pdf'), 'PDF do lote baixado');
+await page.waitForSelector('.block');
+await page.selectOption('.block[data-b="0"] [data-k=category]', 'Progressão');
+await page.click('.block[data-b="0"] [data-act=paste-open]');
+await page.fill('.block[data-b="0"] [data-paste]', 'Ana Paula, Ailson Luiz e Liene Maria\nBruno Lima; Raul e Regina; 222222-2\nCarla Dias');
+await page.click('.block[data-b="0"] [data-act=paste-add]');
+check((await page.locator('.block[data-b="0"] tbody tr').count()) === 3, 'lista colada vira 3 linhas');
+await page.click('#block-add');
+await page.selectOption('.block[data-b="1"] [data-k=model]', 'Progressão Lobinho');
+await page.fill('.block[data-b="1"] tbody tr:first-child [data-rk=name]', 'Amanda Samagaia');
+await page.fill('.block[data-b="1"] tbody tr:first-child [data-rk=responsaveis]', 'Jeferson e Gisele');
+await page.click('#block-add');
+await page.selectOption('.block[data-b="2"] [data-k=category]', 'Especialidades');
+await page.fill('.block[data-b="2"] [data-k=nomeEspecialidade]', 'Radioamadorismo');
+await page.fill('.block[data-b="2"] tbody tr:first-child [data-rk=name]', 'João Samagaia');
+check((await page.locator('.block[data-b="2"] [data-rk=responsaveis]').count()) === 0, 'especialidade não pede responsáveis');
+await page.waitForTimeout(300);
+check((await page.textContent('#batch-count')).includes('5 certificados em 2 folhas'), 'conta 5 certificados em 2 folhas');
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${OUT}/04-montar.png`, fullPage: true });
+await page.locator('#sheet-canvas').screenshot({ path: `${OUT}/04b-folha1.png` });
+const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 90000 }), page.click('#batch-pdf')]);
+await dl3.saveAs(`${OUT}/montagem.pdf`);
+const pdfPages = (readFileSync(`${OUT}/montagem.pdf`, 'latin1').match(/\/Type \/Page[^s]/g) || []).length;
+check(pdfPages === 2, `PDF da montagem com ${pdfPages} folhas (4 + 1)`);
 const lote = await page.evaluate(() => fetch('/api/certificates').then((r) => r.json()));
 const by = (n) => lote.find((c) => c.recipient === n)?.data || {};
-check(by('Ana Paula').responsaveis === 'Ailson Luiz e Liene Maria' && !by('Ana Paula').recipientRegistration, 'lote: responsáveis da linha (sem registro)');
-check(by('Bruno Lima').responsaveis === 'Raul e Regina' && by('Bruno Lima').recipientRegistration === '222222-2', 'lote: responsáveis e registro em qualquer ordem');
-check(!by('Carla Dias').responsaveis, 'lote: linha sem responsáveis não herda os do formulário');
-await page.screenshot({ path: `${OUT}/04-lote.png`, fullPage: true });
+check(by('Ana Paula').responsaveis === 'Ailson Luiz e Liene Maria' && !by('Ana Paula').recipientRegistration, 'responsáveis da linha (sem registro)');
+check(by('Bruno Lima').responsaveis === 'Raul e Regina' && by('Bruno Lima').recipientRegistration === '222222-2', 'responsáveis e registro em qualquer ordem');
+check(!by('Carla Dias').responsaveis, 'linha sem responsáveis fica em branco');
+check(by('Amanda Samagaia').model === 'Progressão Lobinho' && by('Amanda Samagaia').responsaveis === 'Jeferson e Gisele', 'bloco 2: Progressão Lobinho com responsáveis');
+check(!by('Amanda Samagaia').progressionStage && by('Ana Paula').progressionStage === 'Acolhida dos Filhotes', 'etapa da Acolhida não passa para o bloco da Progressão Lobinho');
+check(by('João Samagaia').category === 'Especialidades' && by('João Samagaia').nomeEspecialidade === 'Radioamadorismo', 'bloco 3: especialidade');
+// imprimir de novo não duplica o histórico
+const [dl4] = await Promise.all([page.waitForEvent('download', { timeout: 90000 }), page.click('#batch-pdf')]);
+await dl4.path();
+const again = await page.evaluate(() => fetch('/api/certificates').then((r) => r.json()));
+check(again.length === lote.length, 'baixar de novo não duplica os emitidos');
+// rascunho sobrevive a recarregar a página
+await page.reload();
+await page.waitForSelector('#app:not([hidden])');
+await page.click('[data-tab=lote]');
+check((await page.locator('.block').count()) === 3, 'montagem continua depois de recarregar');
 
 // Emitidos
 await page.click('[data-tab=emitidos]');
 await page.waitForSelector('.hcard');
 const n = await page.locator('.hcard').count();
-check(n >= 5, `histórico mostra ${n} certificados`);
+check(n >= 7, `histórico mostra ${n} certificados`);
 await page.fill('#history-search', 'Bruno');
 await page.waitForTimeout(600);
 check((await page.locator('.hcard').count()) >= 1 && (await page.locator('.hcard h3').allTextContents()).every((t) => t.includes('Bruno')), 'busca no histórico');
@@ -144,7 +175,7 @@ await page.screenshot({ path: `${OUT}/07-config.png`, fullPage: true });
 await page.click(`[data-tpl-use="${promessa.id}"]`);
 await page.fill('#f-recipientName', 'Pedro Henrique');
 await page.waitForTimeout(800);
-await page.locator('.preview-card').screenshot({ path: `${OUT}/08-modelo-enviado.png` });
+await page.locator('#tab-emitir .preview-card').screenshot({ path: `${OUT}/08-modelo-enviado.png` });
 check((await page.textContent('.design.active')).includes('Promessa'), 'emissão usa o modelo enviado');
 
 // Configurações salvas

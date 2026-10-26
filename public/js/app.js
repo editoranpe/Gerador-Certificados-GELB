@@ -198,7 +198,6 @@
     renderExtraFields();
     renderSignerChecks();
     updateEmitStatus();
-    renderBatchUsing();
     schedulePreview();
   }
 
@@ -283,11 +282,18 @@
 
   function selectModel(model) {
     state.cert.model = model;
-    state.cert.design = 'auto';
-    const ramo = GELB.ramoFromModel(model);
-    if (ramo) state.cert.ramo = ramo;
-    if (model === 'Acolhida' && !state.cert.progressionStage) state.cert.progressionStage = 'Acolhida dos Filhotes';
+    resetModelFields(state.cert);
     fillForm();
+  }
+
+  /** Ao trocar de certificado, limpa o que era do anterior (etapa, especialidade, evento…). */
+  const MODEL_FIELDS = ['progressionStage', 'nomeEspecialidade', 'itensCompletados', 'matilhaPatrulha', 'quantidadeAnos', 'quantidadeNovosMembros', 'eventName', 'workloadHours', 'startDate', 'endDate', 'customText'];
+  function resetModelFields(c) {
+    c.design = 'auto';
+    for (const k of MODEL_FIELDS) c[k] = '';
+    c.nivelConquistado = '1';
+    c.ramo = GELB.ramoFromModel(c.model);
+    if (c.model === 'Acolhida') c.progressionStage = 'Acolhida dos Filhotes';
   }
 
   // ------------------------------------------------------------ saída: imprimir, PDF, PNG
@@ -383,79 +389,260 @@
     }
   }
 
-  // ------------------------------------------------------------ lote
+  // ------------------------------------------------------------ montar impressão (vários certificados, 4 por folha)
 
-  function parseBatch() {
-    return $('#batch-text')
-      .value.split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((l) => {
-        const parts = l.split(/\t|;|,/).map((p) => p.trim()).filter(Boolean);
-        // Depois do nome, cada coluna é reconhecida pelo conteúdo, em qualquer ordem:
-        // só números (ex.: 329182-1) é o registro UEB; o resto são os responsáveis.
-        const isRegistration = (p) => /\d/.test(p) && /^[\d.\-\/\s]+[A-Za-z]?$/.test(p);
+  const DRAFT_KEY = 'gelb_montagem';
+  const PER_SHEET = 4;
+  // Campos que valem para o bloco inteiro (o resto — nome, responsáveis, registro — é de cada jovem)
+  const BLOCK_KEYS = ['category', 'model', 'design', 'borderStyle', 'showWatermark', 'showQr', 'city', 'date', 'signers',
+    'progressionStage', 'nomeEspecialidade', 'nivelConquistado', 'itensCompletados', 'ramo', 'matilhaPatrulha', 'quantidadeAnos',
+    'quantidadeNovosMembros', 'eventName', 'workloadHours', 'startDate', 'endDate'];
+
+  let blocks = [];
+
+  /** Lê uma lista colada: "Nome, responsáveis, registro" (colunas reconhecidas pelo conteúdo, em qualquer ordem). */
+  function parseList(text) {
+    const isRegistration = (p) => /\d/.test(p) && /^[\d.\-\/\s]+[A-Za-z]?$/.test(p);
+    return String(text || '')
+      .split('\n')
+      .map((l) => l.split(/\t|;|,/).map((p) => p.trim()).filter(Boolean))
+      .filter((parts) => parts.length)
+      .map((parts) => {
         const rest = parts.slice(1);
-        return {
-          name: parts[0],
-          registration: rest.find(isRegistration) || '',
-          responsaveis: rest.filter((p) => !isRegistration(p)).join(', '),
-        };
+        return newRow({ name: parts[0], registration: rest.find(isRegistration) || '', responsaveis: rest.filter((p) => !isRegistration(p)).join(', ') });
+      });
+  }
+
+  function newRow(r = {}) {
+    return { name: '', responsaveis: '', registration: '', ...r };
+  }
+
+  function blockFrom(src) {
+    const b = { rows: [newRow()] };
+    for (const k of BLOCK_KEYS) if (src[k] !== undefined) b[k] = Array.isArray(src[k]) ? [...src[k]] : src[k];
+    return b;
+  }
+
+  const hasResponsaveis = (b) => (GELB.EXTRA_FIELDS[b.category] || []).includes('responsaveis');
+
+  function saveDraft() {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(blocks));
+    } catch {
+      /* sem armazenamento local: a montagem só não sobrevive a recarregar a página */
+    }
+  }
+
+  function loadDraft() {
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (Array.isArray(d) && d.length) return d;
+    } catch {
+      /* rascunho ilegível: começa do zero */
+    }
+    return null;
+  }
+
+  function ensureBlocks() {
+    if (!blocks.length) blocks = loadDraft() || [blockFrom(state.cert)];
+  }
+
+  /** Certificado de um jovem: dados do bloco + os da linha. O código fica na linha (reimprimir não duplica). */
+  function rowCert(b, r) {
+    if (!r.code || (r.emittedName && r.emittedName !== r.name.trim())) {
+      r.id = newId();
+      r.code = newCode();
+      r.emittedName = '';
+    }
+    const cert = { ...blankCert(), id: r.id, code: r.code };
+    for (const k of BLOCK_KEYS) if (b[k] !== undefined) cert[k] = b[k];
+    cert.recipientName = r.name.trim();
+    cert.responsaveis = hasResponsaveis(b) ? r.responsaveis.trim() : '';
+    cert.recipientRegistration = r.registration.trim();
+    return cert;
+  }
+
+  function allCerts() {
+    const out = [];
+    blocks.forEach((b) => b.rows.forEach((r) => r.name.trim() && out.push({ b, r, cert: rowCert(b, r) })));
+    return out;
+  }
+
+  const optionList = (list, value) => list.map((x) => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
+
+  function renderBlocks() {
+    ensureBlocks();
+    $('#blocks').innerHTML = blocks
+      .map((b, i) => {
+        const t = currentTemplate(b);
+        const designs = [['padrao', 'Layout padrão GELB'], ...templatesFor(b).map((x) => [x.id, x.name])];
+        const extras = (GELB.EXTRA_FIELDS[b.category] || []).filter((k) => k !== 'responsaveis');
+        const showResp = hasResponsaveis(b);
+        return `<article class="block" data-b="${i}">
+          <div class="block-head">
+            <span class="num">${i + 1}</span>
+            <strong>${esc(b.category)} › ${esc(b.model)}</strong>
+            ${blocks.length > 1 ? '<button class="btn btn-ghost btn-sm" type="button" data-act="remove">Remover</button>' : ''}
+          </div>
+          <div class="form-grid">
+            <label>Categoria<select data-k="category">${optionList(Object.keys(GELB.CATEGORIES), b.category)}</select></label>
+            <label>Certificado<select data-k="model">${optionList(GELB.CATEGORIES[b.category] || [], b.model)}</select></label>
+            <label class="${t ? 'span-2' : ''}">Aparência<select data-k="design">${designs.map(([v, l]) => `<option value="${esc(v)}" ${(t ? t.id : 'padrao') === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+            ${t ? '' : `<label>Moldura<select data-k="borderStyle">${GELB.BORDERS.map(([v, l]) => `<option value="${v}" ${b.borderStyle === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`}
+            ${extras
+              .map((k) => {
+                const def = GELB.FIELD_LABELS[k];
+                const val = b[k] ?? '';
+                if (def.options) return `<label>${esc(def.label)}<select data-k="${k}">${def.options.map((o) => `<option value="${o}" ${String(val) === o ? 'selected' : ''}>Nível ${o}</option>`).join('')}</select></label>`;
+                return `<label>${esc(def.label)}<input data-k="${k}" type="${def.type || 'text'}" value="${esc(val)}" placeholder="${esc(def.placeholder || '')}" autocomplete="off"></label>`;
+              })
+              .join('')}
+            <label>Cidade<input data-k="city" value="${esc(b.city || '')}"></label>
+            <label>Data<input data-k="date" type="date" value="${esc(b.date || '')}"></label>
+          </div>
+          <fieldset class="signers"><legend>Quem assina</legend>
+            ${(state.settings.signatories || []).map((s) => `<label class="check"><input type="checkbox" data-signer="${esc(s.id)}" ${(b.signers || []).includes(s.id) ? 'checked' : ''}> ${esc(s.name)} <small>— ${esc(s.role)}</small></label>`).join('')}
+          </fieldset>
+          <label class="check"><input type="checkbox" data-k="showQr" ${b.showQr !== false ? 'checked' : ''}> QR Code de autenticidade</label>
+          <table class="rows">
+            <thead><tr><th>Nome do jovem</th>${showResp ? '<th>Responsáveis</th>' : ''}<th>Registro UEB (opcional)</th><th></th></tr></thead>
+            <tbody>${b.rows
+              .map(
+                (r, j) => `<tr data-r="${j}">
+                  <td><input data-rk="name" value="${esc(r.name)}" placeholder="Nome do jovem" aria-label="Nome do jovem" autocomplete="off"></td>
+                  ${showResp ? `<td><input data-rk="responsaveis" value="${esc(r.responsaveis)}" placeholder="Ex.: José e Maria" aria-label="Responsáveis" autocomplete="off"></td>` : ''}
+                  <td><input data-rk="registration" value="${esc(r.registration)}" placeholder="Registro UEB" aria-label="Registro UEB" autocomplete="off"></td>
+                  <td class="del"><button type="button" data-act="row-del" title="Tirar esta linha" aria-label="Tirar esta linha">×</button></td>
+                </tr>`,
+              )
+              .join('')}</tbody>
+          </table>
+          <div class="row-wrap">
+            <button class="btn btn-ghost btn-sm" type="button" data-act="row-add">＋ Adicionar jovem</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-act="paste-open">Colar uma lista</button>
+          </div>
+          <div class="paste-area" hidden>
+            <label>Cole um nome por linha${showResp ? ' — depois do nome, os responsáveis' : ''} e, se quiser, o registro UEB, separados por vírgula ou ponto e vírgula. Pode vir de uma planilha.
+              <textarea rows="5" data-paste placeholder="João da Silva, José e Maria&#10;Joana da Silva, Juca e Rosa, 329182-1"></textarea>
+            </label>
+            <div><button class="btn btn-primary btn-sm" type="button" data-act="paste-add">Adicionar à lista</button></div>
+          </div>
+        </article>`;
       })
-      .filter((r) => r.name);
+      .join('');
+    updateMontarCount();
+    scheduleSheetPreview();
   }
 
-  function renderBatchUsing() {
-    if (!state.cert) return;
-    const t = currentTemplate();
-    const d = GELB.formatDate(state.cert.date);
-    $('#batch-using').textContent = `${state.cert.category} › ${state.cert.model} · ${t ? t.name : 'Layout padrão GELB'} · ${state.cert.city || ''}${d ? ', ' + d : ''}`;
+  function sheetsCount() {
+    return Math.max(1, Math.ceil(allCerts().length / PER_SHEET));
   }
 
-  function updateBatchCount() {
-    const n = parseBatch().length;
-    $('#batch-count').textContent = n ? `${n} certificado${n > 1 ? 's' : ''} ${n > 1 ? 'serão gerados' : 'será gerado'}.` : 'Nenhum nome ainda.';
+  function updateMontarCount() {
+    const n = allCerts().length;
+    const f = Math.ceil(n / PER_SHEET);
+    $('#batch-count').textContent = n ? `${n} certificado${n > 1 ? 's' : ''} em ${f} folha${f > 1 ? 's' : ''} A4.` : 'Escreva o nome de pelo menos um jovem.';
+    $('#batch-print').textContent = n ? `🖨️ Imprimir ${n}` : '🖨️ Imprimir';
   }
 
-  async function emitBatch(kind) {
-    const rows = parseBatch();
+  // Folha A4 deitada com 2 × 2 certificados (proporção do certificado mantida) e margem para a impressora
+  const SHEET = (() => {
+    const pageW = 297;
+    const pageH = 210;
+    const gap = 6;
+    const cellH = (pageH - 12 - gap) / 2;
+    const cellW = (cellH * GELBRender.W) / GELBRender.H;
+    return { pageW, pageH, gap, cellW, cellH, x0: (pageW - (cellW * 2 + gap)) / 2, y0: (pageH - (cellH * 2 + gap)) / 2 };
+  })();
+
+  async function composeSheet(certs, pxPerMm, preview) {
+    const page = document.createElement('canvas');
+    page.width = Math.round(SHEET.pageW * pxPerMm);
+    page.height = Math.round(SHEET.pageH * pxPerMm);
+    const ctx = page.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, page.width, page.height);
+    const m = (v) => v * pxPerMm;
+    const cell = (i) => [SHEET.x0 + (i % 2) * (SHEET.cellW + SHEET.gap), SHEET.y0 + Math.floor(i / 2) * (SHEET.cellH + SHEET.gap)];
+    for (let i = 0; i < certs.length; i++) {
+      const c = document.createElement('canvas');
+      await GELBRender.draw(c, certs[i], renderEnv(certs[i], preview), m(SHEET.cellW) / GELBRender.W);
+      const [x, y] = cell(i);
+      ctx.drawImage(c, m(x), m(y), m(SHEET.cellW), m(SHEET.cellH));
+    }
+    // marcas de corte nos cantos de cada posição
+    ctx.strokeStyle = '#64748B';
+    ctx.lineWidth = Math.max(1, m(0.2));
+    for (let i = 0; i < PER_SHEET; i++) {
+      const [x, y] = cell(i);
+      for (const [cx, cy, dx, dy] of [[x, y, -1, -1], [x + SHEET.cellW, y, 1, -1], [x, y + SHEET.cellH, -1, 1], [x + SHEET.cellW, y + SHEET.cellH, 1, 1]]) {
+        ctx.beginPath();
+        ctx.moveTo(m(cx + dx), m(cy));
+        ctx.lineTo(m(cx + dx * 4), m(cy));
+        ctx.moveTo(m(cx), m(cy + dy));
+        ctx.lineTo(m(cx), m(cy + dy * 4));
+        ctx.stroke();
+      }
+    }
+    return page;
+  }
+
+  let sheetIndex = 0;
+  let sheetSeq = 0;
+  let sheetTimer = null;
+  function scheduleSheetPreview() {
+    clearTimeout(sheetTimer);
+    sheetTimer = setTimeout(drawSheetPreview, 250);
+  }
+
+  async function drawSheetPreview() {
+    const seq = ++sheetSeq;
+    const total = sheetsCount();
+    sheetIndex = Math.min(sheetIndex, total - 1);
+    $('#sheet-n').textContent = sheetIndex + 1;
+    $('#sheet-total').textContent = total;
+    $('#sheet-prev').disabled = sheetIndex === 0;
+    $('#sheet-next').disabled = sheetIndex >= total - 1;
+    const certs = allCerts().slice(sheetIndex * PER_SHEET, (sheetIndex + 1) * PER_SHEET).map((x) => x.cert);
+    const page = await composeSheet(certs, 3.4, true);
+    if (seq !== sheetSeq) return;
+    const c = $('#sheet-canvas');
+    c.width = page.width;
+    c.height = page.height;
+    c.getContext('2d').drawImage(page, 0, 0);
+  }
+
+  async function emitMontagem(kind) {
     const status = $('#batch-status');
     status.classList.remove('error');
-    if (!rows.length) {
-      status.textContent = 'Escreva pelo menos um nome.';
+    const items = allCerts();
+    if (!items.length) {
+      status.textContent = 'Escreva o nome de pelo menos um jovem.';
       status.classList.add('error');
       return;
     }
-    const certs = rows.map((r) => ({
-      ...blankCert(state.cert),
-      recipientName: r.name,
-      recipientRegistration: r.registration,
-      responsaveis: r.responsaveis, // cada linha traz os seus; nunca herda os do formulário
-      customText: state.cert.customText || '',
-      quantidadeAnos: state.cert.quantidadeAnos,
-      quantidadeNovosMembros: state.cert.quantidadeNovosMembros,
-      itensCompletados: state.cert.itensCompletados,
-      matilhaPatrulha: state.cert.matilhaPatrulha,
-    }));
     const btns = [$('#batch-print'), $('#batch-pdf')];
     btns.forEach((b) => (b.disabled = true));
     const bar = $('#batch-progress');
     bar.hidden = false;
     try {
       status.textContent = 'Registrando os certificados…';
+      const certs = items.map((x) => x.cert);
       await saveCertificates(certs);
-      const size = paper();
-      const pdf = kind === 'pdf' ? newPdf(size) : null;
+      items.forEach((x) => (x.r.emittedName = x.r.name.trim()));
+      saveDraft();
+      const pdf = kind === 'pdf' ? newPdf('a4') : null;
       const urls = [];
-      for (let i = 0; i < certs.length; i++) {
-        status.textContent = `Desenhando ${i + 1} de ${certs.length}: ${certs[i].recipientName}`;
-        bar.firstElementChild.style.width = `${((i + 1) / certs.length) * 100}%`;
-        const canvas = await renderHighRes(certs[i], 2.2);
-        if (pdf) addPage(pdf, canvas, i === 0);
-        else urls.push(canvas.toDataURL('image/jpeg', 0.93));
+      const sheets = Math.ceil(certs.length / PER_SHEET);
+      for (let p = 0; p < sheets; p++) {
+        status.textContent = `Montando a folha ${p + 1} de ${sheets}…`;
+        bar.firstElementChild.style.width = `${((p + 1) / sheets) * 100}%`;
+        const page = await composeSheet(certs.slice(p * PER_SHEET, (p + 1) * PER_SHEET), 11.81, false); // ~300 dpi
+        if (pdf) addPage(pdf, page, p === 0);
+        else urls.push(page.toDataURL('image/jpeg', 0.92));
       }
-      if (pdf) pdf.save(`certificados-${slug(state.cert.model)}-${size.toUpperCase()}.pdf`);
-      else await printImages(urls, size);
+      if (pdf) pdf.save(`certificados-gelb-${todayIso()}.pdf`);
+      else await printImages(urls, 'a4');
       status.textContent = `✓ ${certs.length} certificado(s) registrados em "Emitidos".`;
     } catch (err) {
       status.textContent = err.message;
@@ -464,6 +651,101 @@
       btns.forEach((b) => (b.disabled = false));
       setTimeout(() => (bar.hidden = true), 800);
     }
+  }
+
+  function bindMontar() {
+    const box = $('#blocks');
+    const changed = (structural) => {
+      saveDraft();
+      if (structural) renderBlocks();
+      else {
+        updateMontarCount();
+        scheduleSheetPreview();
+      }
+    };
+    box.addEventListener('input', (e) => {
+      const el = e.target;
+      const art = el.closest('.block');
+      if (!art || el.matches('select, [type=checkbox], [data-paste]')) return;
+      const b = blocks[art.dataset.b];
+      if (el.dataset.rk) b.rows[el.closest('tr').dataset.r][el.dataset.rk] = el.value;
+      else if (el.dataset.k) b[el.dataset.k] = el.value;
+      changed(false);
+    });
+    box.addEventListener('change', (e) => {
+      const el = e.target;
+      const art = el.closest('.block');
+      if (!art) return;
+      const b = blocks[art.dataset.b];
+      if (el.dataset.signer) {
+        const order = (state.settings.signatories || []).map((s) => s.id);
+        const set = new Set(b.signers || []);
+        if (el.checked) set.add(el.dataset.signer);
+        else set.delete(el.dataset.signer);
+        b.signers = [...set].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+        return changed(false);
+      }
+      const k = el.dataset.k;
+      if (k === 'showQr') {
+        b.showQr = el.checked;
+        return changed(false);
+      }
+      if (!k || el.tagName !== 'SELECT') return;
+      b[k] = el.value;
+      if (k === 'category') b.model = GELB.CATEGORIES[b.category][0];
+        if (k === 'category' || k === 'model') resetModelFields(b);
+      changed(['category', 'model', 'design'].includes(k));
+    });
+    box.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const art = btn.closest('.block');
+      const i = Number(art.dataset.b);
+      const b = blocks[i];
+      const act = btn.dataset.act;
+      if (act === 'remove') {
+        if (b.rows.some((r) => r.name.trim()) && !(await confirmBox(`Remover o bloco "${b.model}" e os nomes dele?`, 'Sim, remover'))) return;
+        blocks.splice(i, 1);
+      } else if (act === 'row-add') b.rows.push(newRow());
+      else if (act === 'row-del') {
+        b.rows.splice(Number(btn.closest('tr').dataset.r), 1);
+        if (!b.rows.length) b.rows.push(newRow());
+      } else if (act === 'paste-open') {
+        const area = $('.paste-area', art);
+        area.hidden = !area.hidden;
+        if (!area.hidden) $('textarea', area).focus();
+        return;
+      } else if (act === 'paste-add') {
+        const rows = parseList($('[data-paste]', art).value);
+        if (!rows.length) return;
+        b.rows = b.rows.filter((r) => r.name.trim()).concat(rows);
+      }
+      changed(true);
+      if (act === 'row-add') $(`.block[data-b="${i}"] tbody tr:last-child input`).focus();
+    });
+    $('#block-add').addEventListener('click', () => {
+      const b = blockFrom(blocks[blocks.length - 1] || state.cert);
+      resetModelFields(b);
+      blocks.push(b);
+      changed(true);
+      $('#blocks .block:last-child select').focus();
+    });
+    $('#blocks-clear').addEventListener('click', async () => {
+      if (!(await confirmBox('Apagar todos os blocos e nomes desta montagem? Os certificados já emitidos continuam em "Emitidos".', 'Sim, começar do zero'))) return;
+      blocks = [blockFrom(state.cert)];
+      sheetIndex = 0;
+      changed(true);
+    });
+    $('#sheet-prev').addEventListener('click', () => {
+      sheetIndex = Math.max(0, sheetIndex - 1);
+      drawSheetPreview();
+    });
+    $('#sheet-next').addEventListener('click', () => {
+      sheetIndex = Math.min(sheetsCount() - 1, sheetIndex + 1);
+      drawSheetPreview();
+    });
+    $('#batch-pdf').addEventListener('click', () => emitMontagem('pdf'));
+    $('#batch-print').addEventListener('click', () => emitMontagem('print'));
   }
 
   // ------------------------------------------------------------ emitidos (histórico)
@@ -1158,9 +1440,10 @@
 
   // ------------------------------------------------------------ geral
 
-  function confirmBox(text) {
+  function confirmBox(text, yesLabel = 'Sim, excluir') {
     const dlg = $('#confirm');
     $('#confirm-text').textContent = text;
+    $('#confirm-yes').textContent = yesLabel;
     dlg.showModal();
     return new Promise((resolve) => {
       const done = (v) => {
@@ -1182,8 +1465,7 @@
       renderTemplates();
     }
     if (tab === 'lote') {
-      renderBatchUsing();
-      updateBatchCount();
+      renderBlocks();
     }
     window.scrollTo({ top: 0 });
   }
@@ -1222,9 +1504,7 @@
       await fetch('/api/logout', { method: 'POST' });
       showLogin();
     });
-    $('#batch-text').addEventListener('input', updateBatchCount);
-    $('#batch-pdf').addEventListener('click', () => emitBatch('pdf'));
-    $('#batch-print').addEventListener('click', () => emitBatch('print'));
+    bindMontar();
     bindEmit();
     bindHistory();
     bindSettings();

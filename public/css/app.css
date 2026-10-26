@@ -251,3 +251,31 @@ dialog::backdrop { background: rgba(15, 23, 42, .6); }
 .font-item { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
 .font-item .sample { font-size: 1.6rem; color: var(--navy); line-height: 1.2; overflow-wrap: anywhere; }
 @media (max-width: 1000px) { .type-grid { grid-template-columns: 1fr; } .type-preview { position: static; order: -1; } }
+
+/* ---------- montar impressão ---------- */
+.montar { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 24px; align-items: start; }
+.montar-main { display: flex; flex-direction: column; gap: 16px; }
+.montar-side { position: sticky; top: 88px; }
+#sheet-canvas { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.sheet-nav { display: flex; gap: 6px; }
+.add-block { border-style: dashed; }
+#blocks { display: flex; flex-direction: column; gap: 16px; }
+.block { background: var(--card); border: 2px solid var(--line); border-left: 6px solid var(--gold); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.block-head { display: flex; align-items: center; gap: 10px; }
+.block-head strong { flex: 1; color: var(--navy); font-size: 1.05rem; }
+.block .signers { margin: 0; }
+.rows { width: 100%; border-collapse: collapse; }
+.rows th { text-align: left; font-size: .85rem; color: var(--muted); padding: 4px 6px; }
+.rows td { padding: 4px 6px 4px 0; vertical-align: middle; }
+.rows td input { padding: 8px 10px; }
+.rows .del { width: 40px; }
+.rows .del button { font: inherit; font-weight: 800; border: 1px solid var(--line); background: #fff; border-radius: 8px; width: 34px; height: 34px; cursor: pointer; color: var(--danger); }
+.paste-area { background: #f8fafc; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 1000px) { .montar { grid-template-columns: 1fr; } .montar-side { position: static; } }
+@media (max-width: 640px) {
+  .rows thead { display: none; }
+  .rows tr { display: grid; grid-template-columns: 1fr 40px; gap: 6px; border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .rows td { padding: 0; }
+  .rows td.del { grid-row: 1; grid-column: 2; }
+  .rows td:not(.del) { grid-column: 1; }
+}
