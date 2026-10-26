@@ -59,6 +59,39 @@
     return fontsPromise;
   }
 
+  // Fontes enviadas pela diretoria (Configurações → Letras). O desenho espera elas carregarem.
+  const loadedFonts = new Set();
+  let customFontsReady = Promise.resolve();
+  function setCustomFonts(list) {
+    const pending = (list || [])
+      .filter((f) => !loadedFonts.has(f.id) && typeof FontFace === 'function')
+      .map((f) => {
+        loadedFonts.add(f.id);
+        const face = new FontFace(f.name, `url(/api/fonts/${encodeURIComponent(f.id)}/file)`);
+        document.fonts.add(face);
+        return face.load().catch(() => null);
+      });
+    customFontsReady = Promise.all([customFontsReady, ...pending]);
+    return customFontsReady;
+  }
+
+  /** Letra, cor e transparência de cada parte do texto (Configurações → Letras). */
+  function role(settings, key) {
+    const def = GELB.TEXT_ROLES.find((r) => r.key === key);
+    const t = (settings.typography || {})[key] || {};
+    const op = Number(t.opacity);
+    return {
+      font: t.font || def.font,
+      color: t.color || def.color,
+      alpha: Number.isFinite(op) ? Math.max(5, Math.min(100, op)) / 100 : 1,
+    };
+  }
+
+  function paint(ctx, r) {
+    ctx.fillStyle = r.color;
+    ctx.globalAlpha = r.alpha;
+  }
+
   // ------------------------------------------------------------ utilidades de texto
 
   function setFont(ctx, weight, size, family) {
@@ -168,14 +201,19 @@
   function drawSignature(ctx, sig, img, cx, y, colW, opts = {}) {
     const imgH = opts.imgH || 44;
     const nameSize = opts.nameSize || 12;
+    const font = opts.font || 'Montserrat, sans-serif';
+    const color = opts.color || NAVY;
+    const alpha = opts.alpha ?? 1;
     if (img) drawContain(ctx, img, cx - colW / 2, y, colW, imgH);
     else {
-      ctx.fillStyle = NAVY;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       fitFont(ctx, sig.name, 400, imgH * 0.6, "'Great Vibes', cursive", colW);
       ctx.fillText(sig.name, cx, y + imgH * 0.8);
     }
+    ctx.globalAlpha = 1;
     let yy = y + imgH + 4;
     if (opts.line !== false) {
       ctx.fillStyle = 'rgba(51,65,85,0.85)';
@@ -184,14 +222,16 @@
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = NAVY;
-    fitFont(ctx, sig.name.toUpperCase(), 700, nameSize, 'Montserrat, sans-serif', colW);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    fitFont(ctx, sig.name.toUpperCase(), 700, nameSize, font, colW);
     ctx.fillText(sig.name.toUpperCase(), cx, yy);
     if (opts.role !== false && sig.role) {
-      ctx.fillStyle = '#475569';
-      fitFont(ctx, sig.role, 500, nameSize * 0.83, 'Montserrat, sans-serif', colW);
+      ctx.fillStyle = opts.color ? color : '#475569';
+      fitFont(ctx, sig.role, 500, nameSize * 0.83, font, colW);
       ctx.fillText(sig.role, cx, yy + nameSize + 3);
     }
+    ctx.globalAlpha = 1;
   }
 
   // ------------------------------------------------------------ layout padrão GELB
@@ -258,11 +298,13 @@
     const tMax = right - rightLogoW - 16 - tx;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = NAVY;
+    const rHead = role(settings, 'cabecalho');
+    paint(ctx, rHead);
     letterSpacing(ctx, 1);
     const group = (settings.groupName || '').toUpperCase();
-    fitFont(ctx, group, 700, 18, "Cinzel, serif", tMax);
+    fitFont(ctx, group, 700, 18, rHead.font, tMax);
     ctx.fillText(group, tx, 92);
+    ctx.globalAlpha = 1;
     letterSpacing(ctx, 1.5);
     ctx.fillStyle = '#B45309';
     fitFont(ctx, 'GELB 32/SC • FUNDADO EM 1958 • BLUMENAU / SC', 600, 12, 'Montserrat, sans-serif', tMax);
@@ -276,11 +318,13 @@
 
     // Título
     ctx.textAlign = 'center';
-    ctx.fillStyle = NAVY;
+    const rTitle = role(settings, 'titulo');
+    paint(ctx, rTitle);
     letterSpacing(ctx, 2);
     const title = GELB.titleFor(cert).toUpperCase();
-    fitFont(ctx, title, 900, 30, "'Cinzel Decorative', 'Playfair Display', serif", right - left - 40, 16);
+    fitFont(ctx, title, 900, 30, rTitle.font, right - left - 40, 16);
     ctx.fillText(title, W / 2, 210);
+    ctx.globalAlpha = 1;
     letterSpacing(ctx, 0);
     ctx.fillStyle = GOLD;
     ctx.fillRect(W / 2 - 96, 224, 192, 4);
@@ -292,9 +336,12 @@
     ctx.fillText('CONFERIDO A:', W / 2, 260);
     letterSpacing(ctx, 0);
     const name = cert.recipientName || (env.preview ? 'Nome do jovem' : '');
-    ctx.fillStyle = cert.recipientName ? '#78350F' : '#CBD5E1';
-    fitFont(ctx, name, 700, 36, "'Playfair Display', serif", 800, 18);
+    const rName = role(settings, 'nome');
+    if (cert.recipientName) paint(ctx, rName);
+    else ctx.fillStyle = '#CBD5E1';
+    fitFont(ctx, name, 700, 36, rName.font, 800, 18);
     ctx.fillText(name, W / 2, 304);
+    ctx.globalAlpha = 1;
     const nw = Math.max(240, ctx.measureText(name).width + 64);
     ctx.fillStyle = '#FCD34D';
     ctx.fillRect(W / 2 - nw / 2, 316, nw, 2);
@@ -305,24 +352,27 @@
     }
 
     // Texto
+    const rText = role(settings, 'texto');
     let size = 16;
     let lines;
     do {
-      setFont(ctx, 500, size, 'Montserrat, sans-serif');
+      setFont(ctx, 500, size, rText.font);
       lines = wrap(ctx, bodyText(cert, settings), 860);
       if (lines.length <= 5) break;
       size -= 1;
     } while (size > 11);
     const lh = size * 1.6;
     let y = 384;
-    ctx.fillStyle = '#334155';
+    paint(ctx, rText);
     for (const l of lines) {
       ctx.fillText(l, W / 2, y);
       y += lh;
     }
-    setFont(ctx, 600, 14, 'Montserrat, sans-serif');
-    ctx.fillStyle = NAVY;
+    const rDate = role(settings, 'data');
+    setFont(ctx, 600, 14, rDate.font);
+    paint(ctx, rDate);
     ctx.fillText(dateLine(cert, settings), W / 2, y + 12);
+    ctx.globalAlpha = 1;
     y += 12;
 
     // Emblemas
@@ -356,7 +406,8 @@
       const gap = 48;
       const colW = Math.min(208, (avail - gap * (signers.length - 1)) / signers.length);
       const total = colW * signers.length + gap * (signers.length - 1);
-      signers.forEach((s, i) => drawSignature(ctx, s, sigImgs[i], W / 2 - total / 2 + colW / 2 + i * (colW + gap), 614, colW));
+      const rSig = role(settings, 'assinaturas');
+      signers.forEach((s, i) => drawSignature(ctx, s, sigImgs[i], W / 2 - total / 2 + colW / 2 + i * (colW + gap), 614, colW, { font: rSig.font, color: rSig.color, alpha: rSig.alpha }));
     }
     if (showQr) drawQr(ctx, env.qrUrl, cert.code, right - 36, 664, 66);
   }
@@ -422,6 +473,7 @@
     const sigImgs = await Promise.all(signers.map((s) => loadImage(s.image)));
     const font = layout.font || "'Montserrat', sans-serif";
     const color = layout.color || NAVY;
+    const alpha = Number.isFinite(Number(layout.opacity)) ? Math.max(5, Math.min(100, Number(layout.opacity))) / 100 : 1;
 
     for (const [key, f] of Object.entries(layout.fields)) {
       if (!f.on) continue;
@@ -429,6 +481,7 @@
       const y = (f.y / 100) * H;
       const w = (f.w / 100) * W;
       ctx.save();
+      ctx.globalAlpha = key === 'qr' ? 1 : alpha;
       ctx.shadowColor = 'rgba(255,255,255,0.95)';
       ctx.shadowBlur = 2;
       ctx.shadowOffsetY = 1;
@@ -438,13 +491,13 @@
         if (cert.showQr !== false) drawQr(ctx, env.qrUrl, cert.code, x, y, f.size);
       } else if (key === 'assinatura1' || key === 'assinatura2') {
         const i = key === 'assinatura1' ? 0 : 1;
-        if (signers[i]) drawSignature(ctx, signers[i], sigImgs[i], x, y - f.size * 4 - f.size - 6, w, { imgH: f.size * 4, nameSize: f.size, line: false, role: false });
+        if (signers[i]) drawSignature(ctx, signers[i], sigImgs[i], x, y - f.size * 4 - f.size - 6, w, { imgH: f.size * 4, nameSize: f.size, line: false, role: false, font, color, alpha });
       } else if (key === 'assinaturas') {
         if (signers.length) {
           const gap = 40;
           const colW = Math.min(200, (w - gap * (signers.length - 1)) / signers.length);
           const total = colW * signers.length + gap * (signers.length - 1);
-          signers.forEach((s, j) => drawSignature(ctx, s, sigImgs[j], x - total / 2 + colW / 2 + j * (colW + gap), y - f.size * 3, colW, { imgH: f.size * 3.6, nameSize: f.size }));
+          signers.forEach((s, j) => drawSignature(ctx, s, sigImgs[j], x - total / 2 + colW / 2 + j * (colW + gap), y - f.size * 3, colW, { imgH: f.size * 3.6, nameSize: f.size, font, color, alpha }));
         }
       } else if (key === 'texto') {
         ctx.fillStyle = color;
@@ -458,7 +511,7 @@
         let text = fieldText(key, cert, settings);
         if (!text && env.preview && PLACEHOLDERS[key]) {
           text = PLACEHOLDERS[key];
-          ctx.globalAlpha = 0.35;
+          ctx.globalAlpha = 0.35 * alpha;
         }
         if (text) {
           ctx.fillStyle = color;
@@ -592,6 +645,7 @@
    */
   async function draw(canvas, cert, env, scale = 1) {
     await ensureFonts();
+    await customFontsReady;
     const settings = { ...DEFAULT_SETTINGS, ...(env.settings || {}) };
     if (!Array.isArray(settings.signatories)) settings.signatories = DEFAULT_SETTINGS.signatories;
     canvas.width = Math.round(W * scale);
@@ -604,5 +658,5 @@
     return canvas;
   }
 
-  window.GELBRender = { W, H, draw, loadImage, ensureFonts, fieldBox, DEFAULT_SETTINGS };
+  window.GELBRender = { W, H, draw, loadImage, ensureFonts, setCustomFonts, fieldBox, DEFAULT_SETTINGS };
 })();

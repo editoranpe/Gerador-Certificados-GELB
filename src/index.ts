@@ -33,6 +33,7 @@ async function ensureSchema(db: D1Database) {
     db.prepare(`CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, recipient TEXT NOT NULL, registration TEXT, category TEXT, model TEXT, event_date TEXT, data TEXT NOT NULL, issued_at TEXT NOT NULL, updated_at TEXT NOT NULL)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_certificates_issued ON certificates(issued_at)`),
     db.prepare(`CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS fonts (id TEXT PRIMARY KEY, name TEXT NOT NULL, mime TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL)`),
     // Modelo padrão embutido: a arte é desenhada pelo navegador; aqui só guardamos as posições.
     db
       .prepare(
@@ -131,6 +132,19 @@ app.get('/api/validar/:code', async (c) => {
   return c.json({ ok: true, certificate: row });
 });
 
+// Logo do grupo (pública: aparece na tela de entrada, no topo e na página de conferência)
+app.get('/api/logo', async (c) => {
+  const row = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'logoLeft'").first<{ value: string }>();
+  let logo: unknown = null;
+  try {
+    logo = row ? JSON.parse(row.value) : null;
+  } catch {
+    /* valor corrompido: usa a logo original */
+  }
+  if (typeof logo === 'string' && logo.startsWith('data:image/')) return dataUrlResponse(logo, undefined, 'public, max-age=300');
+  return c.redirect('/img/logo-gelb.svg', 302);
+});
+
 // ---------------------------------------------------------------- daqui para baixo, só com login
 
 app.use('/api/*', async (c, next) => {
@@ -155,7 +169,7 @@ app.get('/api/settings', async (c) => {
   return c.json(out);
 });
 
-const SETTING_KEYS = ['groupName', 'city', 'logoLeft', 'logoRight', 'signatories'];
+const SETTING_KEYS = ['groupName', 'city', 'logoLeft', 'logoRight', 'signatories', 'typography'];
 
 app.put('/api/settings', async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
@@ -214,11 +228,11 @@ app.get('/api/templates', async (c) => {
   return c.json(results.map(templateOut));
 });
 
-function dataUrlResponse(dataUrl: string, filename?: string) {
+function dataUrlResponse(dataUrl: string, filename?: string, cache = 'private, max-age=31536000, immutable') {
   const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(dataUrl);
   if (!m) return new Response('Arquivo inválido', { status: 500 });
   const bytes = m[2] ? Uint8Array.from(atob(m[3]), (ch) => ch.charCodeAt(0)) : enc.encode(decodeURIComponent(m[3]));
-  const headers: Record<string, string> = { 'content-type': m[1], 'cache-control': 'private, max-age=31536000, immutable' };
+  const headers: Record<string, string> = { 'content-type': m[1], 'cache-control': cache };
   if (filename) headers['content-disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
   return new Response(bytes, { headers });
 }
@@ -317,6 +331,43 @@ app.delete('/api/templates/:id', async (c) => {
   } else {
     await c.env.DB.batch([c.env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id), c.env.DB.prepare('DELETE FROM template_files WHERE id = ?').bind(id)]);
   }
+  return c.json({ ok: true });
+});
+
+// Fontes enviadas pela diretoria (usadas nos certificados)
+const FONT_TYPES: Record<string, string> = { ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2' };
+
+app.get('/api/fonts', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT id, name FROM fonts ORDER BY name').all();
+  return c.json(results);
+});
+
+app.get('/api/fonts/:id/file', async (c) => {
+  const row = await c.env.DB.prepare('SELECT data FROM fonts WHERE id = ?').bind(c.req.param('id')).first<{ data: string }>();
+  if (!row) return c.text('Fonte não encontrada', 404);
+  return dataUrlResponse(row.data);
+});
+
+app.post('/api/fonts', async (c) => {
+  const b = await c.req.json<{ name?: string; fileName?: string; data?: string }>();
+  const ext = String(b.fileName || '').toLowerCase().split('.').pop() || '';
+  const mime = FONT_TYPES[ext];
+  if (!mime) return c.json({ ok: false, message: 'Envie um arquivo de fonte .ttf, .otf, .woff ou .woff2.' }, 400);
+  if (typeof b.data !== 'string' || !b.data.includes(';base64,')) return c.json({ ok: false, message: 'Arquivo de fonte inválido.' }, 400);
+  if (tooBig(b.data)) return c.json({ ok: false, message: 'Fonte grande demais (máximo de 1,4 MB).' }, 413);
+  // Nome da família: só letras, números, espaço e hífen (vai dentro de CSS e do canvas)
+  const name = clean(b.name, 60).replace(/[^\p{L}\p{N} \-]/gu, '').trim();
+  if (!name) return c.json({ ok: false, message: 'Dê um nome para a fonte.' }, 400);
+  const dup = await c.env.DB.prepare('SELECT id FROM fonts WHERE name = ?').bind(name).first();
+  if (dup) return c.json({ ok: false, message: `Já existe uma fonte chamada "${name}".` }, 409);
+  const id = 'font-' + crypto.randomUUID().slice(0, 12);
+  const data = `data:${mime};base64,` + b.data.slice(b.data.indexOf(';base64,') + 8);
+  await c.env.DB.prepare('INSERT INTO fonts (id, name, mime, data, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, mime, data, now()).run();
+  return c.json({ ok: true, id, name });
+});
+
+app.delete('/api/fonts/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM fonts WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
 

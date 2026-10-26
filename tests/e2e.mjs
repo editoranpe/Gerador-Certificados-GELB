@@ -1,7 +1,7 @@
 // Teste de ponta a ponta: rode `npm run dev` (com .dev.vars) e depois `npm run test:e2e`.
 // Usa um banco local; cria certificados e um modelo de teste.
 import { chromium } from 'playwright';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 
 const BASE = process.env.BASE_URL || 'http://localhost:8787';
 const PASS = process.env.APP_PASSWORD || 'diretoria-teste';
@@ -145,9 +145,43 @@ check((await page.textContent('.design.active')).includes('Promessa'), 'emissão
 // Configurações salvas
 await page.click('[data-tab=config]');
 await page.fill('#s-groupName', 'Grupo Escoteiro Leões de Blumenau - GELB 32/SC');
+check((await page.getAttribute('.topbar .brand-logo', 'src')).startsWith('/api/logo'), 'logo do topo vem da configuração');
+
+// Logo do grupo: a enviada passa a aparecer no topo e na tela de entrada
+const logoPng = await page.evaluate(() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 200;
+  const x = c.getContext('2d');
+  x.fillStyle = '#c62828';
+  x.beginPath();
+  x.arc(100, 100, 90, 0, Math.PI * 2);
+  x.fill();
+  return c.toDataURL('image/png').split(',')[1];
+});
+await page.setInputFiles('[data-logo=logoLeft]', { name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from(logoPng, 'base64') });
+
+// Letras: fonte enviada, cor e transparência
+const FONT = process.env.FONT_FILE || '/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf';
+if (existsSync(FONT)) {
+  await page.setInputFiles('#font-file', FONT);
+  await page.fill('#font-name', 'Letra Teste');
+  await page.click('#font-save');
+  await page.waitForSelector('#font-status:has-text("enviada")');
+  check((await page.locator('.font-item').count()) === 1, 'fonte enviada aparece na lista');
+  await page.selectOption('[data-role=nome] select', "'Letra Teste', sans-serif");
+} else console.log('(sem arquivo de fonte para testar o envio)');
+await page.locator('[data-role=nome] input[type=color]').fill('#c62828');
+await page.locator('[data-role=texto] input[type=range]').fill('60');
+await page.waitForTimeout(600);
+await page.locator('.type-grid').screenshot({ path: `${OUT}/10-letras.png` });
+
 await page.click('#save-settings');
 await page.waitForSelector('#settings-status:has-text("salvas")');
 check(true, 'configurações salvas');
+const saved = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()));
+check(saved.typography?.nome?.color === '#c62828' && saved.typography?.texto?.opacity === 40, 'cor e transparência salvas');
+const logoRes = await page.evaluate(() => fetch('/api/logo').then((r) => r.headers.get('content-type')));
+check(logoRes === 'image/png', 'logo enviada é servida em /api/logo');
 
 // Celular
 const m = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -157,6 +191,15 @@ await m.waitForSelector('#app:not([hidden])');
 await m.waitForTimeout(800);
 const overflow = await m.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 check(!overflow, 'sem rolagem lateral no celular');
+const anon = await browser.newPage();
+await anon.goto(BASE);
+await anon.waitForSelector('#login:not([hidden])');
+const loginLogoOk = await anon.evaluate(() => {
+  const img = document.querySelector('#login .brand-logo');
+  return img.complete && img.naturalWidth === 200;
+});
+check(loginLogoOk, 'tela de entrada mostra a logo enviada');
+await anon.screenshot({ path: `${OUT}/11-entrada.png` });
 await m.screenshot({ path: `${OUT}/09-celular.png`, fullPage: true });
 
 check(errors.length === 0, `sem erros de JavaScript${errors.length ? ': ' + errors.join(' | ') : ''}`);

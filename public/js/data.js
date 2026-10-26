@@ -207,6 +207,7 @@
   }
 
   const FONTS = [
+    ["'Cinzel Decorative', 'Playfair Display', serif", 'Cinzel Decorative (títulos)'],
     ["'Montserrat', sans-serif", 'Montserrat (moderna)'],
     ["'Playfair Display', serif", 'Playfair Display (elegante)'],
     ["'Nunito', sans-serif", 'Nunito (arredondada)'],
@@ -214,6 +215,16 @@
     ["'Merriweather', serif", 'Merriweather (serifada)'],
     ["'Great Vibes', cursive", 'Great Vibes (caligrafia)'],
     ["'Dancing Script', cursive", 'Dancing Script (manuscrita)'],
+  ];
+
+  /** Partes do texto do layout padrão que a diretoria pode personalizar em Configurações → Letras. */
+  const TEXT_ROLES = [
+    { key: 'cabecalho', label: 'Nome do grupo (cabeçalho)', font: "'Cinzel', serif", color: '#0F2C59' },
+    { key: 'titulo', label: 'Título do certificado', font: "'Cinzel Decorative', 'Playfair Display', serif", color: '#0F2C59' },
+    { key: 'nome', label: 'Nome do jovem', font: "'Playfair Display', serif", color: '#78350F' },
+    { key: 'texto', label: 'Texto do certificado', font: "'Montserrat', sans-serif", color: '#334155' },
+    { key: 'data', label: 'Cidade e data', font: "'Montserrat', sans-serif", color: '#0F2C59' },
+    { key: 'assinaturas', label: 'Nomes de quem assina', font: "'Montserrat', sans-serif", color: '#0F2C59' },
   ];
 
   const COLORS = [
@@ -231,5 +242,5 @@
     ['minimalist', 'Simples (azul)'],
   ];
 
-  window.GELB = { CATEGORIES, MONTHS, EXTRA_FIELDS, FIELD_LABELS, TEMPLATE_FIELDS, FONTS, COLORS, BORDERS, formatDate, splitDate, ramoFromModel, titleFor, autoText, presetLinhas, presetCentro, normalizeLayout };
+  window.GELB = { CATEGORIES, MONTHS, EXTRA_FIELDS, FIELD_LABELS, TEMPLATE_FIELDS, FONTS, COLORS, BORDERS, TEXT_ROLES, formatDate, splitDate, ramoFromModel, titleFor, autoText, presetLinhas, presetCentro, normalizeLayout };
 })();

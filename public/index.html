@@ -15,7 +15,7 @@
   <!-- LOGIN -->
   <section id="login" class="login" hidden>
     <form class="login-card" id="login-form">
-      <img src="/img/logo-gelb.svg" alt="" width="88" height="88">
+      <img src="/api/logo" alt="Logo do GELB 32/SC" width="88" height="88" class="brand-logo">
       <h1>Gerador de Certificados</h1>
       <p>Grupo Escoteiro Leões de Blumenau · GELB 32/SC</p>
       <label for="login-pass">Senha da diretoria</label>
@@ -30,7 +30,7 @@
   <div id="app" hidden>
     <header class="topbar">
       <div class="brand">
-        <img src="/img/logo-gelb.svg" alt="" width="40" height="40">
+        <img src="/api/logo" alt="" width="40" height="40" class="brand-logo">
         <div>
           <strong>Gerador de Certificados</strong>
           <span>GELB 32/SC</span>
@@ -207,6 +207,30 @@
           <button class="btn btn-ghost btn-sm" id="sig-add">＋ Adicionar pessoa que assina</button>
         </div>
 
+        <div class="panel">
+          <h2>Letras dos certificados</h2>
+          <p class="hint">Escolha a letra, a cor e a transparência de cada parte do texto do layout padrão. Transparência 0% é a cor cheia; quanto mais alto, mais clarinho fica o texto. A prévia mostra o resultado. Para os modelos com arte própria, isso é ajustado em "Ajustar posições".</p>
+          <div class="type-grid">
+            <div>
+              <div id="type-roles" class="type-roles"></div>
+              <button class="btn btn-ghost btn-sm" id="type-reset" type="button">Voltar às letras originais</button>
+            </div>
+            <div class="type-preview">
+              <canvas id="type-canvas" width="1122" height="793"></canvas>
+            </div>
+          </div>
+
+          <h3 class="subhead">Fontes enviadas</h3>
+          <p class="hint">Envie um arquivo de fonte (.ttf, .otf, .woff ou .woff2) e ela aparece nas listas de letras — aqui e no ajuste dos modelos.</p>
+          <form id="font-form" class="row-wrap font-form">
+            <label class="btn btn-secondary btn-sm file-btn">Escolher arquivo de fonte<input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2"></label>
+            <label class="field-inline">Nome<input id="font-name" placeholder="Ex.: Letra GELB" maxlength="60"></label>
+            <button class="btn btn-primary btn-sm" type="submit" id="font-save">Enviar fonte</button>
+          </form>
+          <p class="status" id="font-status"></p>
+          <div id="font-list" class="font-list"></div>
+        </div>
+
         <div class="settings-save">
           <button class="btn btn-primary" id="save-settings">Salvar configurações</button>
           <span class="status" id="settings-status"></span>
@@ -286,6 +310,9 @@
           <select id="le-font"></select>
         </label>
         <div class="colors" id="le-colors"></div>
+        <label>Transparência <span id="le-opacity-val" class="muted"></span>
+          <input type="range" id="le-opacity" min="0" max="95" step="5">
+        </label>
         <div id="le-fields" class="le-fields"></div>
       </div>
     </div>

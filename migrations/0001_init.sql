@@ -52,3 +52,12 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   count INTEGER NOT NULL,
   window_start INTEGER NOT NULL
 );
+
+-- Fontes enviadas pela diretoria
+CREATE TABLE IF NOT EXISTS fonts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);

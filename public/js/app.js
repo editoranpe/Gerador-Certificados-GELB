@@ -11,6 +11,7 @@
   const state = {
     settings: { ...GELBRender.DEFAULT_SETTINGS },
     templates: [],
+    fonts: [], // fontes enviadas pela diretoria
     cert: null,
     emitted: false, // o certificado atual já foi impresso/baixado (registrado)
     history: [],
@@ -552,6 +553,147 @@
     $('#s-city').value = draftSettings.city || '';
     renderLogos();
     renderSigList();
+    renderTypeRoles();
+    renderFontList();
+  }
+
+  // ------------------------------------------------------------ letras (fontes, cor e transparência)
+
+  /** Opções de letra: as do sistema + as enviadas pela diretoria. */
+  function fontOptions() {
+    return GELB.FONTS.concat(state.fonts.map((f) => [`'${f.name}', sans-serif`, `${f.name} (enviada)`]));
+  }
+
+  function fontSelectHtml(value) {
+    const opts = fontOptions();
+    if (value && !opts.some(([v]) => v === value)) opts.push([value, 'Fonte removida (usa a padrão)']);
+    return opts.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  }
+
+  function typeOf(key) {
+    const def = GELB.TEXT_ROLES.find((r) => r.key === key);
+    const t = (draftSettings.typography || {})[key] || {};
+    return { font: t.font || def.font, color: t.color || def.color, opacity: t.opacity ?? 100 };
+  }
+
+  function renderTypeRoles() {
+    $('#type-roles').innerHTML = GELB.TEXT_ROLES.map((r) => {
+      const t = typeOf(r.key);
+      return `<div class="type-role" data-role="${r.key}">
+        <strong>${esc(r.label)}</strong>
+        <select data-type="font" aria-label="Letra">${fontSelectHtml(t.font)}</select>
+        <input type="color" data-type="color" value="${esc(t.color)}" aria-label="Cor">
+        <label class="opacity">Transparência <input type="range" data-type="opacity" min="0" max="95" step="5" value="${100 - t.opacity}"><span>${100 - t.opacity}%</span></label>
+      </div>`;
+    }).join('');
+    drawTypePreview();
+  }
+
+  let typeSeq = 0;
+  let typeTimer = null;
+  function drawTypePreview() {
+    clearTimeout(typeTimer);
+    typeTimer = setTimeout(async () => {
+      const seq = ++typeSeq;
+      const off = document.createElement('canvas');
+      const sample = { ...state.cert, design: 'padrao', recipientName: state.cert.recipientName || 'Gabriel Schmidt Silva' };
+      await GELBRender.draw(off, sample, { settings: draftSettings, template: null, preview: true, qrUrl: verifyUrl(sample.code) }, 1);
+      if (seq !== typeSeq) return;
+      const c = $('#type-canvas');
+      c.width = off.width;
+      c.height = off.height;
+      c.getContext('2d').drawImage(off, 0, 0);
+    }, 120);
+  }
+
+  function renderFontList() {
+    $('#font-list').innerHTML = state.fonts.length
+      ? state.fonts
+          .map(
+            (f) => `<div class="font-item">
+              <strong>${esc(f.name)}</strong>
+              <span class="sample" style="font-family:'${esc(f.name)}', sans-serif">Gabriel Schmidt Silva</span>
+              <div><button class="btn btn-ghost btn-sm" type="button" data-font-del="${esc(f.id)}">Excluir</button></div>
+            </div>`,
+          )
+          .join('')
+      : '<p class="hint">Nenhuma fonte enviada ainda.</p>';
+  }
+
+  async function loadFonts() {
+    state.fonts = await api('/api/fonts');
+    await GELBRender.setCustomFonts(state.fonts);
+  }
+
+  function bindTypography() {
+    const update = (e) => {
+      const row = e.target.closest('.type-role');
+      const k = e.target.dataset.type;
+      if (!row || !k) return;
+      const key = row.dataset.role;
+      draftSettings.typography = draftSettings.typography || {};
+      const t = { ...typeOf(key), ...(draftSettings.typography[key] || {}) };
+      // a barra mostra a transparência (0% = cor cheia); guardamos a opacidade
+      t[k] = k === 'opacity' ? 100 - Number(e.target.value) : e.target.value;
+      draftSettings.typography[key] = t;
+      if (k === 'opacity') row.querySelector('.opacity span').textContent = `${100 - t.opacity}%`;
+      drawTypePreview();
+    };
+    $('#type-roles').addEventListener('input', update);
+    $('#type-roles').addEventListener('change', update);
+    $('#type-reset').addEventListener('click', () => {
+      draftSettings.typography = {};
+      renderTypeRoles();
+    });
+    $('#font-file').addEventListener('change', () => {
+      const f = $('#font-file').files[0];
+      if (f && !$('#font-name').value.trim()) {
+        $('#font-name').value = f.name.replace(/\.(ttf|otf|woff2?)$/i, '').replace(/[-_]+/g, ' ').replace(/[^\p{L}\p{N} ]/gu, '').trim();
+      }
+      $('#font-status').textContent = f ? `Arquivo escolhido: ${f.name}` : '';
+      $('#font-status').classList.remove('error');
+    });
+    $('#font-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const st = $('#font-status');
+      st.classList.remove('error');
+      const file = $('#font-file').files[0];
+      if (!file) {
+        st.textContent = 'Escolha primeiro o arquivo da fonte.';
+        st.classList.add('error');
+        return;
+      }
+      if (file.size > 1_400_000) {
+        st.textContent = 'Essa fonte é grande demais (máximo de 1,4 MB). Prefira o arquivo .woff2.';
+        st.classList.add('error');
+        return;
+      }
+      const btn = $('#font-save');
+      btn.disabled = true;
+      try {
+        const res = await api('/api/fonts', { method: 'POST', body: { name: $('#font-name').value, fileName: file.name, data: await readAsDataUrl(file) } });
+        await loadFonts();
+        $('#font-form').reset();
+        st.textContent = `✓ Fonte "${res.name}" enviada. Ela já aparece nas listas de letras.`;
+        renderTypeRoles();
+        renderFontList();
+      } catch (err) {
+        st.textContent = err.message;
+        st.classList.add('error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    $('#font-list').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-font-del]');
+      if (!b) return;
+      const f = state.fonts.find((x) => x.id === b.dataset.fontDel);
+      if (!f || !(await confirmBox(`Excluir a fonte "${f.name}"? Onde ela estiver em uso, volta a letra padrão.`))) return;
+      await api('/api/fonts/' + encodeURIComponent(f.id), { method: 'DELETE' });
+      state.fonts = state.fonts.filter((x) => x.id !== f.id);
+      renderTypeRoles();
+      renderFontList();
+    });
   }
 
   function renderLogos() {
@@ -641,6 +783,8 @@
         const ids = state.settings.signatories.map((s) => s.id);
         state.cert.signers = state.cert.signers.filter((id) => ids.includes(id));
         st.textContent = '✓ Configurações salvas.';
+        // a logo do topo e da tela de entrada acompanha a logo do grupo
+        $$('.brand-logo').forEach((img) => (img.src = '/api/logo?v=' + Date.now()));
         fillForm();
       } catch (err) {
         st.textContent = err.message;
@@ -852,7 +996,7 @@
     editor.tpl = tpl;
     editor.layout = GELB.normalizeLayout(JSON.parse(JSON.stringify(tpl.layout || {})));
     editor.sel = 'nome';
-    $('#le-font').innerHTML = GELB.FONTS.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    $('#le-font').innerHTML = fontSelectHtml(editor.layout.font);
     $('#layout-editor').showModal();
     renderEditor();
   }
@@ -885,6 +1029,9 @@
 
   function renderEditorSide() {
     $('#le-font').value = editor.layout.font;
+    const op = editor.layout.opacity ?? 100;
+    $('#le-opacity').value = 100 - op;
+    $('#le-opacity-val').textContent = `${100 - op}%`;
     $('#le-colors').innerHTML =
       GELB.COLORS.map(([c, n]) => `<button type="button" title="${esc(n)}" data-color="${c}" style="background:${c}" class="${editor.layout.color === c ? 'active' : ''}"></button>`).join('') +
       `<input type="color" id="le-color-custom" value="${esc(editor.layout.color)}" title="Outra cor">`;
@@ -958,6 +1105,11 @@
       if (e.target.matches('[data-align]')) f.align = e.target.value;
       editor.sel = row.dataset.k;
       renderEditor();
+    });
+    $('#le-opacity').addEventListener('input', (e) => {
+      editor.layout.opacity = 100 - Number(e.target.value);
+      $('#le-opacity-val').textContent = `${e.target.value}%`;
+      drawEditorCanvas();
     });
     $('#le-font').addEventListener('change', (e) => {
       editor.layout.font = e.target.value;
@@ -1040,7 +1192,7 @@
   async function start() {
     $('#login').hidden = true;
     $('#app').hidden = false;
-    const [settings] = await Promise.all([api('/api/settings'), loadTemplates()]);
+    const [settings] = await Promise.all([api('/api/settings'), loadTemplates(), loadFonts().catch(() => null)]);
     state.settings = { ...GELBRender.DEFAULT_SETTINGS, ...settings };
     if (!Array.isArray(state.settings.signatories)) state.settings.signatories = GELBRender.DEFAULT_SETTINGS.signatories;
     state.cert = blankCert();
@@ -1068,6 +1220,7 @@
     bindEmit();
     bindHistory();
     bindSettings();
+    bindTypography();
     bindTemplates();
     bindEditor();
   }

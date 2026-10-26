@@ -18,7 +18,9 @@ O app antigo do AI Studio fica guardado na branch `ai-studio-original`.
 2. **Vários de uma vez** — cole uma lista de nomes (um por linha; pode vir de planilha) e gere um único PDF
    ou imprima todos de uma vez, usando as escolhas feitas na aba *Emitir*.
 3. **Emitidos** — busca, reabre para reimprimir, baixa o PDF de novo ou exclui.
-4. **Configurações** — nome do grupo, cidade, logos, quem assina (com imagem da assinatura) e
+4. **Configurações** — nome do grupo, cidade, logos (a logo do grupo também aparece no topo, na tela de entrada e na
+   página de conferência), quem assina (com imagem da assinatura), **letras** (envio de fontes próprias e letra, cor e
+   transparência de cada parte do texto) e
    **modelos com arte própria**: envie um PDF/imagem, diga onde vai cada informação arrastando os quadros, e pronto.
 
 Qualquer pessoa pode conferir um certificado em **/validar** (é para lá que o QR Code aponta).
