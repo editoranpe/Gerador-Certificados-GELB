@@ -391,8 +391,16 @@
       .map((l) => l.trim())
       .filter(Boolean)
       .map((l) => {
-        const parts = l.split(/\t|;|,/).map((p) => p.trim());
-        return { name: parts[0], registration: parts[1] || '', responsaveis: parts.slice(2).filter(Boolean).join(', ') };
+        const parts = l.split(/\t|;|,/).map((p) => p.trim()).filter(Boolean);
+        // Depois do nome, cada coluna é reconhecida pelo conteúdo, em qualquer ordem:
+        // só números (ex.: 329182-1) é o registro UEB; o resto são os responsáveis.
+        const isRegistration = (p) => /\d/.test(p) && /^[\d.\-\/\s]+[A-Za-z]?$/.test(p);
+        const rest = parts.slice(1);
+        return {
+          name: parts[0],
+          registration: rest.find(isRegistration) || '',
+          responsaveis: rest.filter((p) => !isRegistration(p)).join(', '),
+        };
       })
       .filter((r) => r.name);
   }
@@ -422,7 +430,7 @@
       ...blankCert(state.cert),
       recipientName: r.name,
       recipientRegistration: r.registration,
-      responsaveis: r.responsaveis || state.cert.responsaveis || '',
+      responsaveis: r.responsaveis, // cada linha traz os seus; nunca herda os do formulário
       customText: state.cert.customText || '',
       quantidadeAnos: state.cert.quantidadeAnos,
       quantidadeNovosMembros: state.cert.quantidadeNovosMembros,

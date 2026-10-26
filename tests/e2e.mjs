@@ -77,11 +77,16 @@ await vpage.close();
 
 // Lote
 await page.click('[data-tab=lote]');
-await page.fill('#batch-text', 'Ana Paula, 111111-1\nBruno Lima; 222222-2\nCarla Dias');
+await page.fill('#batch-text', 'Ana Paula, Ailson Luiz e Liene Maria\nBruno Lima; Raul e Regina; 222222-2\nCarla Dias');
 check((await page.textContent('#batch-count')).includes('3 certificados'), 'lote conta 3 nomes');
 const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#batch-pdf')]);
 await dl3.saveAs(`${OUT}/lote.pdf`);
 check(dl3.suggestedFilename().endsWith('.pdf'), 'PDF do lote baixado');
+const lote = await page.evaluate(() => fetch('/api/certificates').then((r) => r.json()));
+const by = (n) => lote.find((c) => c.recipient === n)?.data || {};
+check(by('Ana Paula').responsaveis === 'Ailson Luiz e Liene Maria' && !by('Ana Paula').recipientRegistration, 'lote: responsáveis da linha (sem registro)');
+check(by('Bruno Lima').responsaveis === 'Raul e Regina' && by('Bruno Lima').recipientRegistration === '222222-2', 'lote: responsáveis e registro em qualquer ordem');
+check(!by('Carla Dias').responsaveis, 'lote: linha sem responsáveis não herda os do formulário');
 await page.screenshot({ path: `${OUT}/04-lote.png`, fullPage: true });
 
 // Emitidos
