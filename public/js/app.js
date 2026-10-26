@@ -27,9 +27,13 @@
       credentials: 'same-origin',
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && path !== '/api/me' && path !== '/api/login') {
-      showLogin();
+    if (res.status === 401 && !['/api/me', '/api/login', '/api/setup'].includes(path)) {
+      showLogin('Sua sessão terminou. Entre de novo.');
       throw new Error('Faça login novamente.');
+    }
+    if (res.status === 403 && data.mustChange) {
+      showChange();
+      throw new Error(data.message);
     }
     if (!res.ok) throw new Error(data.message || 'Não foi possível concluir. Verifique a internet e tente de novo.');
     return data;
@@ -753,15 +757,20 @@
   let historyTimer = null;
   async function loadHistory() {
     const q = $('#history-search').value.trim();
+    const by = $('#history-by').value;
     const box = $('#history-list');
     try {
-      state.history = await api('/api/certificates?q=' + encodeURIComponent(q));
+      const [list, issuers] = await Promise.all([api(`/api/certificates?q=${encodeURIComponent(q)}&by=${encodeURIComponent(by)}`), api('/api/certificates/issuers')]);
+      state.history = list;
+      $('#history-by').innerHTML =
+        '<option value="">Emitidos por todos</option>' +
+        issuers.map((i) => `<option value="${esc(i.id)}" ${i.id === by ? 'selected' : ''}>Emitidos por ${esc(i.name)} (${i.n})</option>`).join('');
     } catch (err) {
       box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
       return;
     }
     if (!state.history.length) {
-      box.innerHTML = `<p class="empty">${q ? 'Nada encontrado com essa busca.' : 'Nenhum certificado emitido ainda. Eles aparecem aqui assim que você imprime ou baixa.'}</p>`;
+      box.innerHTML = `<p class="empty">${q || by ? 'Nada encontrado com essa busca.' : 'Nenhum certificado emitido ainda. Eles aparecem aqui assim que você imprime ou baixa.'}</p>`;
       return;
     }
     box.innerHTML = state.history
@@ -771,6 +780,7 @@
           <div class="meta">${esc(h.category)} › <strong>${esc(h.model)}</strong></div>
           <div class="meta">${h.registration ? 'Registro UEB ' + esc(h.registration) + ' · ' : ''}${esc(GELB.formatDate(h.event_date) || '')}</div>
           <div class="meta"><span class="code">${esc(h.code)}</span></div>
+          <div class="issuer">Emitido por <strong>${esc(h.issued_by_name || '—')}</strong> em ${esc(fmtDateTime(h.issued_at))}</div>
           <div class="actions">
             <button class="btn btn-primary btn-sm" data-h-open="${esc(h.id)}">Abrir / reimprimir</button>
             <button class="btn btn-ghost btn-sm" data-h-pdf="${esc(h.id)}">Baixar PDF</button>
@@ -782,6 +792,7 @@
   }
 
   function bindHistory() {
+    $('#history-by').addEventListener('change', loadHistory);
     $('#history-search').addEventListener('input', () => {
       clearTimeout(historyTimer);
       historyTimer = setTimeout(loadHistory, 250);
@@ -1438,6 +1449,208 @@
     });
   }
 
+  // ------------------------------------------------------------ usuários (só administradores)
+
+  const fmtDateTime = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  let users = [];
+
+  async function loadUsers() {
+    users = await api('/api/users');
+    renderUsers();
+    const sel = $('#audit-user');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todas as pessoas</option>' + users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+    sel.value = cur;
+    loadAudit();
+  }
+
+  function renderUsers() {
+    $('#user-list').innerHTML = users
+      .map((u) => {
+        const me = u.id === state.user.id;
+        const badges = [
+          u.role === 'admin' ? '<span class="badge admin">Administrador</span>' : '<span class="badge gray">Usuário</span>',
+          u.active ? '' : '<span class="badge off">Desativado</span>',
+          u.active && u.must_change ? '<span class="badge temp">Ainda não criou a senha</span>' : '',
+          me ? '<span class="badge">Você</span>' : '',
+        ].join(' ');
+        return `<div class="user-row ${u.active ? '' : 'off'}" data-u="${esc(u.id)}">
+          <div>
+            <h3>${esc(u.name)} ${badges}</h3>
+            <div class="meta">${esc(u.email)}</div>
+            <div class="meta">Último acesso: ${u.last_seen_at ? esc(fmtDateTime(u.last_seen_at)) : 'nunca entrou'} · ${u.issued} certificado(s) emitido(s)${u.created_by_name ? ` · criado por ${esc(u.created_by_name)}` : ''}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" type="button" data-u-act="edit">Editar</button>
+            ${u.active ? `<button class="btn btn-ghost btn-sm" type="button" data-u-act="reset">Gerar senha nova</button>` : ''}
+            ${me ? '' : u.active ? '<button class="btn btn-ghost btn-sm" type="button" data-u-act="off">Desativar</button>' : '<button class="btn btn-primary btn-sm" type="button" data-u-act="on">Reativar</button>'}
+          </div>
+        </div>`;
+      })
+      .join('');
+  }
+
+  /** Mostra a senha provisória e a mensagem pronta para enviar (WhatsApp, e-mail ou copiar). */
+  function showAccess(user, temp, isNew) {
+    const msg =
+      `Olá, ${user.name}! ${isNew ? 'Seu acesso ao Gerador de Certificados do GELB 32/SC está pronto.' : 'Geramos uma senha nova para você entrar no Gerador de Certificados do GELB 32/SC.'}\n\n` +
+      `Endereço: ${location.origin}\nE-mail: ${user.email}\nSenha provisória: ${temp}\n\n` +
+      'No primeiro acesso, o sistema vai pedir para você criar a sua própria senha.';
+    const box = $('#user-access');
+    box.innerHTML = `<h3>${isNew ? 'Acesso criado' : 'Senha nova gerada'} para ${esc(user.name)}</h3>
+      <div>Senha provisória: <span class="temp-pass">${esc(temp)}</span></div>
+      <p class="hint" style="margin:0">Anote ou envie agora: por segurança, ela não aparece de novo. A pessoa cria a própria senha no primeiro acesso.</p>
+      <label>Mensagem pronta para enviar<textarea rows="7" readonly>${esc(msg)}</textarea></label>
+      <div class="actions" style="margin:0">
+        <button class="btn btn-primary btn-sm" type="button" data-copy>Copiar mensagem</button>
+        <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">Enviar pelo WhatsApp</a>
+        <a class="btn btn-ghost btn-sm" href="mailto:${encodeURIComponent(user.email)}?subject=${encodeURIComponent('Seu acesso ao Gerador de Certificados GELB')}&body=${encodeURIComponent(msg)}">Enviar por e-mail</a>
+        <button class="btn btn-ghost btn-sm" type="button" data-close>Fechar</button>
+      </div>`;
+    box.hidden = false;
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function loadAudit() {
+    const who = $('#audit-user').value;
+    const list = await api('/api/audit' + (who ? '?user=' + encodeURIComponent(who) : ''));
+    $('#audit-list').innerHTML = list.length
+      ? list
+          .map(
+            (a) => `<div class="audit-item"><time datetime="${esc(a.at)}">${esc(fmtDateTime(a.at))}</time>
+              <div><strong>${esc(a.user_name || '—')}</strong> · ${esc(a.action)}${a.details ? ` <span class="det">— ${esc(a.details)}</span>` : ''}</div></div>`,
+          )
+          .join('')
+      : '<p class="empty">Nenhuma alteração registrada ainda.</p>';
+  }
+
+  function bindUsers() {
+    $('#user-new').addEventListener('click', () => {
+      $('#user-form').hidden = false;
+      $('#user-name').focus();
+    });
+    $('#user-cancel').addEventListener('click', () => {
+      $('#user-form').reset();
+      $('#user-form').hidden = true;
+    });
+    $('#user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = $('#user-error');
+      err.hidden = true;
+      const body = { name: $('#user-name').value, email: $('#user-email').value, role: $('#user-admin').checked ? 'admin' : 'user' };
+      try {
+        const res = await api('/api/users', { method: 'POST', body });
+        $('#user-form').reset();
+        $('#user-form').hidden = true;
+        await loadUsers();
+        showAccess(users.find((u) => u.id === res.id) || body, res.tempPassword, true);
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    });
+    $('#user-access').addEventListener('click', async (e) => {
+      const box = $('#user-access');
+      if (e.target.matches('[data-close]')) {
+        box.hidden = true;
+        box.innerHTML = '';
+      } else if (e.target.matches('[data-copy]')) {
+        const text = $('textarea', box).value;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          $('textarea', box).select();
+          document.execCommand('copy');
+        }
+        e.target.textContent = '✓ Copiada';
+      }
+    });
+    $('#user-list').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-u-act]');
+      if (!btn) return;
+      const u = users.find((x) => x.id === btn.closest('.user-row').dataset.u);
+      const act = btn.dataset.uAct;
+      try {
+        if (act === 'edit') {
+          $('#ue-name').value = u.name;
+          $('#ue-email').value = u.email;
+          $('#ue-admin').checked = u.role === 'admin';
+          $('#ue-error').hidden = true;
+          $('#user-edit').dataset.u = u.id;
+          $('#user-edit').showModal();
+        } else if (act === 'reset') {
+          if (!(await confirmBox(`Gerar uma senha provisória nova para ${u.name}? A senha atual dele(a) deixa de funcionar.`, 'Sim, gerar senha nova'))) return;
+          const res = await api(`/api/users/${encodeURIComponent(u.id)}/reset`, { method: 'POST' });
+          await loadUsers();
+          showAccess(u, res.tempPassword, false);
+        } else if (act === 'off') {
+          if (!(await confirmBox(`Desativar o acesso de ${u.name}? A pessoa sai do sistema na hora, mas o nome continua nos certificados que emitiu.`, 'Sim, desativar'))) return;
+          await api(`/api/users/${encodeURIComponent(u.id)}`, { method: 'PUT', body: { active: false } });
+          await loadUsers();
+        } else if (act === 'on') {
+          await api(`/api/users/${encodeURIComponent(u.id)}`, { method: 'PUT', body: { active: true } });
+          await loadUsers();
+        }
+      } catch (ex) {
+        alert(ex.message);
+      }
+    });
+    $('#ue-cancel').addEventListener('click', () => $('#user-edit').close());
+    $('#user-edit-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = $('#user-edit').dataset.u;
+      try {
+        await api(`/api/users/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: { name: $('#ue-name').value, email: $('#ue-email').value, role: $('#ue-admin').checked ? 'admin' : 'user' },
+        });
+        $('#user-edit').close();
+        if (id === state.user.id) await refreshMe();
+        await loadUsers();
+      } catch (ex) {
+        $('#ue-error').textContent = ex.message;
+        $('#ue-error').hidden = false;
+      }
+    });
+    $('#audit-user').addEventListener('change', loadAudit);
+  }
+
+  // ------------------------------------------------------------ minha senha
+
+  function bindMyPassword() {
+    const dlg = $('#my-password');
+    $('#my-password-open').addEventListener('click', () => {
+      $('#my-password-form').reset();
+      $('#mp-error').hidden = true;
+      $('#mp-status').textContent = '';
+      dlg.showModal();
+    });
+    $('#mp-cancel').addEventListener('click', () => dlg.close());
+    $('#my-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = $('#mp-error');
+      err.hidden = true;
+      if ($('#mp-new').value !== $('#mp-new2').value) {
+        err.textContent = 'As duas senhas novas não são iguais.';
+        err.hidden = false;
+        return;
+      }
+      try {
+        await api('/api/password', { method: 'POST', body: { current: $('#mp-current').value, password: $('#mp-new').value } });
+        $('#my-password-form').reset();
+        $('#mp-status').textContent = '✓ Senha trocada. Use a nova senha no próximo acesso.';
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    });
+  }
+
   // ------------------------------------------------------------ geral
 
   function confirmBox(text, yesLabel = 'Sim, excluir') {
@@ -1467,16 +1680,45 @@
     if (tab === 'lote') {
       renderBlocks();
     }
+    if (tab === 'usuarios') loadUsers().catch((err) => alert(err.message));
     window.scrollTo({ top: 0 });
   }
 
-  function showLogin(message) {
+  // ------------------------------------------------------------ entrada: login, primeiro acesso e senha provisória
+
+  function showEntry(form, message) {
     $('#app').hidden = true;
     $('#login').hidden = false;
+    for (const id of ['login-form', 'setup-form', 'change-form']) $('#' + id).hidden = id !== form;
     const err = $('#login-error');
     err.hidden = !message;
     err.textContent = message || '';
-    $('#login-pass').focus();
+    const first = $(`#${form} input`);
+    if (first) first.focus();
+  }
+
+  const showLogin = (message) => showEntry('login-form', message);
+
+  function showChange(user) {
+    $('#change-name').textContent = (user || state.user || {}).name || '';
+    $('#change-form').reset();
+    showEntry('change-form');
+  }
+
+  async function refreshMe() {
+    const me = await api('/api/me');
+    state.user = me.user;
+    $('#who-name').textContent = me.user.name;
+    $('#tab-btn-usuarios').hidden = me.user.role !== 'admin';
+    return me.user;
+  }
+
+  /** Depois de entrar: senha provisória pede a troca; senão abre o sistema. */
+  async function afterLogin() {
+    const user = await refreshMe();
+    if (user.mustChange) return showChange(user);
+    bindAll();
+    await start();
   }
 
   async function start() {
@@ -1488,6 +1730,7 @@
     state.cert = blankCert();
     state.cert.progressionStage = 'Acolhida dos Filhotes';
     state.emitted = false;
+    switchTab('emitir');
     fillForm();
   }
 
@@ -1500,10 +1743,6 @@
       const g = e.target.closest('[data-goto]');
       if (g) switchTab(g.dataset.goto);
     });
-    $('#logout').addEventListener('click', async () => {
-      await fetch('/api/logout', { method: 'POST' });
-      showLogin();
-    });
     bindMontar();
     bindEmit();
     bindHistory();
@@ -1511,17 +1750,62 @@
     bindTypography();
     bindTemplates();
     bindEditor();
+    bindUsers();
+    bindMyPassword();
   }
+
+  // cada nova tentativa limpa o aviso anterior
+  for (const id of ['login-form', 'setup-form', 'change-form']) $('#' + id).addEventListener('submit', () => ($('#login-error').hidden = true), true);
+
+  const entryError = (err) => {
+    const box = $('#login-error');
+    box.textContent = err.message;
+    box.hidden = false;
+  };
+
+  $$('[data-logout]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      state.user = null;
+      showLogin();
+    }),
+  );
 
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      await api('/api/login', { method: 'POST', body: { password: $('#login-pass').value } });
+      await api('/api/login', { method: 'POST', body: { email: $('#login-email').value, password: $('#login-pass').value } });
       $('#login-pass').value = '';
-      bindAll();
-      await start();
+      await afterLogin();
     } catch (err) {
-      showLogin(err.message);
+      entryError(err);
+    }
+  });
+
+  $('#setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if ($('#setup-pass').value !== $('#setup-pass2').value) return entryError(new Error('As duas senhas não são iguais.'));
+    try {
+      await api('/api/setup', {
+        method: 'POST',
+        body: { key: $('#setup-key').value, name: $('#setup-name').value, email: $('#setup-email').value, password: $('#setup-pass').value },
+      });
+      $('#setup-form').reset();
+      await afterLogin();
+    } catch (err) {
+      entryError(err);
+    }
+  });
+
+  $('#change-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if ($('#change-pass').value !== $('#change-pass2').value) return entryError(new Error('As duas senhas não são iguais.'));
+    try {
+      await api('/api/password', { method: 'POST', body: { password: $('#change-pass').value } });
+      $('#change-form').reset();
+      await afterLogin();
+    } catch (err) {
+      entryError(err);
     }
   });
 
@@ -1529,12 +1813,12 @@
     const res = await fetch('/api/me', { credentials: 'same-origin' }).catch(() => null);
     const data = res ? await res.json().catch(() => ({})) : {};
     if (res && res.ok) {
-      bindAll();
       try {
-        await start();
+        await afterLogin();
       } catch (err) {
         showLogin(err.message);
       }
-    } else showLogin(data.configured === false ? 'O sistema ainda não tem senha configurada (veja o README).' : '');
+    } else if (data.setup) showEntry('setup-form');
+    else showLogin(data.configured === false ? 'O sistema ainda não foi configurado (veja o README).' : '');
   })();
 })();

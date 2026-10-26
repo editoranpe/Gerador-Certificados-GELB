@@ -26,6 +26,20 @@ O app antigo do AI Studio fica guardado na branch `ai-studio-original`.
    transparência de cada parte do texto) e
    **modelos com arte própria**: envie um PDF/imagem, diga onde vai cada informação arrastando os quadros, e pronto.
 
+5. **Usuários** (só administradores) — cada pessoa da diretoria entra com o **próprio e-mail e senha**:
+   - o administrador cria o acesso (nome, e-mail, administrador ou não) e o sistema gera uma **senha provisória**, com
+     mensagem pronta para copiar, mandar pelo WhatsApp ou por e-mail;
+   - no primeiro acesso a pessoa é obrigada a criar a própria senha; se esquecer, o administrador gera outra provisória;
+   - **desativar** tira o acesso na hora, sem apagar o nome dos certificados que a pessoa emitiu;
+   - a lista mostra o **último acesso** e quantos certificados cada um emitiu; em *Emitidos* aparece **quem emitiu**,
+     com filtro por pessoa; o **histórico de alterações** registra quem mexeu em configurações, modelos, fontes,
+     usuários e quem excluiu certificados.
+   Todos os usuários têm os mesmos acessos nos certificados; só a área *Usuários* é exclusiva dos administradores.
+
+**Primeiro acesso:** com o banco vazio, a tela de entrada pede a **chave de instalação** (o segredo `APP_PASSWORD`)
+para criar o primeiro administrador. Depois disso, a chave só serve para um administrador que esqueceu a senha entrar e
+criar outra (usuários comuns pedem uma senha nova ao administrador).
+
 Qualquer pessoa pode conferir um certificado em **/validar** (é para lá que o QR Code aponta).
 
 ## O que mudou em relação ao app do AI Studio
@@ -74,7 +88,7 @@ As tabelas são criadas sozinhas pelo Worker no primeiro acesso.
    - Deploy command: `npx wrangler deploy`
    - Branch: `main`
 2. Em **Settings → Variables and Secrets** do Worker `gerador-certificados`, crie os segredos:
-   - `APP_PASSWORD` — a senha da diretoria;
+   - `APP_PASSWORD` — a chave de instalação (cria o 1º administrador e recupera o acesso de administrador);
    - `SESSION_SECRET` — um texto aleatório com 32+ caracteres.
    (ou pelo terminal: `npx wrangler secret put APP_PASSWORD` e `npx wrangler secret put SESSION_SECRET`)
 3. **Subdomínio:** `gerador-certificados.geleoesdeblumenau.com.br` já está declarado no `wrangler.toml`

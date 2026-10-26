@@ -1,22 +1,11 @@
 /**
  * Gerador de Certificados GELB 32/SC — API do Worker.
  * As páginas e o desenho dos certificados ficam em public/ (rodam no navegador).
- * Aqui ficam: login da diretoria, modelos, configurações, histórico e validação pública.
+ * Aqui ficam: modelos, configurações, histórico e validação pública. Login e usuários: src/auth.ts.
  */
 import { Hono } from 'hono';
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { AUTH_SCHEMA, audit, publicAuthRoutes, requireLogin, type AppEnv } from './auth';
 
-interface Env {
-  DB: D1Database;
-  ASSETS: Fetcher;
-  APP_PASSWORD?: string;
-  SESSION_SECRET?: string;
-}
-
-type AppEnv = { Bindings: Env };
-
-const COOKIE = 'gelb_cert_session';
-const SESSION_TTL = 30 * 24 * 60 * 60; // 30 dias: a diretoria não precisa entrar toda hora
 const MAX_VALUE = 1_900_000; // limite de texto por linha no D1 (~2 MB)
 
 const app = new Hono<AppEnv>();
@@ -34,6 +23,7 @@ async function ensureSchema(db: D1Database) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_certificates_issued ON certificates(issued_at)`),
     db.prepare(`CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL)`),
     db.prepare(`CREATE TABLE IF NOT EXISTS fonts (id TEXT PRIMARY KEY, name TEXT NOT NULL, mime TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL)`),
+    ...AUTH_SCHEMA.map((sql) => db.prepare(sql)),
     // Modelo padrão embutido: a arte é desenhada pelo navegador; aqui só guardamos as posições.
     db
       .prepare(
@@ -42,6 +32,13 @@ async function ensureSchema(db: D1Database) {
       )
       .bind(new Date().toISOString()),
   ]);
+  // Quem emitiu cada certificado (colunas novas em bancos já existentes)
+  const { results: cols } = await db.prepare('PRAGMA table_info(certificates)').all<{ name: string }>();
+  const have = new Set(cols.map((x) => x.name));
+  const add = [];
+  if (!have.has('issued_by')) add.push(db.prepare('ALTER TABLE certificates ADD COLUMN issued_by TEXT'));
+  if (!have.has('issued_by_name')) add.push(db.prepare('ALTER TABLE certificates ADD COLUMN issued_by_name TEXT'));
+  if (add.length) await db.batch(add);
   schemaReady = true;
 }
 
@@ -50,76 +47,11 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
-// ---------------------------------------------------------------- sessão
+// ---------------------------------------------------------------- entrada (e-mail e senha)
 
 const enc = new TextEncoder();
-const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-async function hmac(secret: string, data: string) {
-  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return b64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(data))));
-}
-
-async function safeEqual(a: string, b: string) {
-  const [x, y] = await Promise.all([hmac('cmp', a), hmac('cmp', b)]);
-  let diff = x.length ^ y.length;
-  for (let i = 0; i < Math.min(x.length, y.length); i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
-  return diff === 0;
-}
-
-const configured = (env: Env) => !!env.APP_PASSWORD && !!env.SESSION_SECRET && env.SESSION_SECRET.length >= 32;
-
-async function makeSession(env: Env) {
-  const exp = String(Math.floor(Date.now() / 1000) + SESSION_TTL);
-  return `${exp}.${await hmac(env.SESSION_SECRET!, 'sessao:' + exp)}`;
-}
-
-async function validSession(env: Env, cookie?: string) {
-  if (!cookie || !configured(env)) return false;
-  const [exp, sig] = cookie.split('.');
-  if (!exp || !sig || Number(exp) < Date.now() / 1000) return false;
-  return safeEqual(sig, await hmac(env.SESSION_SECRET!, 'sessao:' + exp));
-}
-
-app.get('/api/me', async (c) => {
-  if (!configured(c.env)) return c.json({ ok: false, configured: false }, 401);
-  const ok = await validSession(c.env, getCookie(c, COOKIE));
-  return c.json({ ok, configured: true }, ok ? 200 : 401);
-});
-
-app.post('/api/login', async (c) => {
-  if (!configured(c.env)) return c.json({ ok: false, message: 'O sistema ainda não tem senha configurada. Veja o README.' }, 503);
-  const ip = c.req.header('cf-connecting-ip') || 'local';
-  const now = Math.floor(Date.now() / 1000);
-  const row = await c.env.DB.prepare('SELECT count, window_start FROM login_attempts WHERE ip = ?').bind(ip).first<{ count: number; window_start: number }>();
-  if (row && now - row.window_start < 900 && row.count >= 8) {
-    return c.json({ ok: false, message: 'Muitas tentativas. Aguarde 15 minutos e tente de novo.' }, 429);
-  }
-  const body = await c.req.json<{ password?: string }>().catch(() => ({} as { password?: string }));
-  if (await safeEqual(String(body.password || ''), c.env.APP_PASSWORD!)) {
-    await c.env.DB.prepare('DELETE FROM login_attempts WHERE ip = ?').bind(ip).run();
-    setCookie(c, COOKIE, await makeSession(c.env), {
-      httpOnly: true,
-      secure: new URL(c.req.url).protocol === 'https:',
-      sameSite: 'Lax',
-      path: '/',
-      maxAge: SESSION_TTL,
-    });
-    return c.json({ ok: true });
-  }
-  const fresh = !row || now - row.window_start >= 900;
-  await c.env.DB.prepare(
-    'INSERT INTO login_attempts (ip, count, window_start) VALUES (?1, 1, ?2) ON CONFLICT(ip) DO UPDATE SET count = CASE WHEN ?3 THEN 1 ELSE count + 1 END, window_start = CASE WHEN ?3 THEN ?2 ELSE window_start END',
-  )
-    .bind(ip, now, fresh ? 1 : 0)
-    .run();
-  return c.json({ ok: false, message: 'Senha incorreta.' }, 401);
-});
-
-app.post('/api/logout', (c) => {
-  deleteCookie(c, COOKIE, { path: '/' });
-  return c.json({ ok: true });
-});
+publicAuthRoutes(app);
 
 // ---------------------------------------------------------------- validação pública (QR Code)
 
@@ -147,10 +79,7 @@ app.get('/api/logo', async (c) => {
 
 // ---------------------------------------------------------------- daqui para baixo, só com login
 
-app.use('/api/*', async (c, next) => {
-  if (!(await validSession(c.env, getCookie(c, COOKIE)))) return c.json({ ok: false, message: 'Faça login novamente.' }, 401);
-  await next();
-});
+requireLogin(app);
 
 const now = () => new Date().toISOString();
 const tooBig = (v: unknown) => typeof v === 'string' && v.length > MAX_VALUE;
@@ -182,7 +111,11 @@ app.put('/api/settings', async (c) => {
       c.env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = ?3').bind(key, value, now()),
     );
   }
-  if (stmts.length) await c.env.DB.batch(stmts);
+  if (stmts.length) {
+    await c.env.DB.batch(stmts);
+    const labels: Record<string, string> = { groupName: 'nome do grupo', city: 'cidade', logoLeft: 'logo da esquerda', logoRight: 'logo da direita', signatories: 'assinaturas', typography: 'letras' };
+    await audit(c, 'Salvou as configurações', SETTING_KEYS.filter((k) => k in body).map((k) => labels[k]).join(', '));
+  }
   return c.json({ ok: true });
 });
 
@@ -295,6 +228,7 @@ app.post('/api/templates', async (c) => {
   }
   await c.env.DB.batch(stmts);
   if (b.isDefault !== false) await clearOtherDefaults(c.env.DB, id);
+  await audit(c, 'Enviou modelo', `${name} (${category} › ${model})`);
   return c.json({ ok: true, id });
 });
 
@@ -319,18 +253,22 @@ app.put('/api/templates/:id', async (c) => {
   vals.push(id);
   await c.env.DB.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?${vals.length}`).bind(...vals).run();
   if (b.isDefault) await clearOtherDefaults(c.env.DB, id);
+  const tpl = await c.env.DB.prepare('SELECT name FROM templates WHERE id = ?').bind(id).first<{ name: string }>();
+  const what = b.hidden === false ? 'Restaurou modelo' : b.isDefault ? 'Definiu modelo como padrão' : b.layout !== undefined ? 'Ajustou posições do modelo' : 'Editou modelo';
+  await audit(c, what, tpl?.name || id);
   return c.json({ ok: true });
 });
 
 app.delete('/api/templates/:id', async (c) => {
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT builtin FROM templates WHERE id = ?').bind(id).first<{ builtin: number }>();
+  const row = await c.env.DB.prepare('SELECT builtin, name FROM templates WHERE id = ?').bind(id).first<{ builtin: number; name: string }>();
   if (row?.builtin) {
     // O modelo embutido não é apagado de verdade: fica oculto e pode ser restaurado.
     await c.env.DB.prepare('UPDATE templates SET hidden = 1, updated_at = ? WHERE id = ?').bind(now(), id).run();
   } else {
     await c.env.DB.batch([c.env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id), c.env.DB.prepare('DELETE FROM template_files WHERE id = ?').bind(id)]);
   }
+  if (row) await audit(c, 'Excluiu modelo', row.name);
   return c.json({ ok: true });
 });
 
@@ -363,11 +301,14 @@ app.post('/api/fonts', async (c) => {
   const id = 'font-' + crypto.randomUUID().slice(0, 12);
   const data = `data:${mime};base64,` + b.data.slice(b.data.indexOf(';base64,') + 8);
   await c.env.DB.prepare('INSERT INTO fonts (id, name, mime, data, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, mime, data, now()).run();
+  await audit(c, 'Enviou fonte', name);
   return c.json({ ok: true, id, name });
 });
 
 app.delete('/api/fonts/:id', async (c) => {
+  const font = await c.env.DB.prepare('SELECT name FROM fonts WHERE id = ?').bind(c.req.param('id')).first<{ name: string }>();
   await c.env.DB.prepare('DELETE FROM fonts WHERE id = ?').bind(c.req.param('id')).run();
+  if (font) await audit(c, 'Excluiu fonte', font.name);
   return c.json({ ok: true });
 });
 
@@ -385,14 +326,24 @@ interface CertInput {
 
 app.get('/api/certificates', async (c) => {
   const q = `%${(c.req.query('q') || '').trim()}%`;
+  const by = c.req.query('by') || '';
   const { results } = await c.env.DB.prepare(
-    `SELECT id, code, recipient, registration, category, model, event_date, issued_at, updated_at, data FROM certificates
-     WHERE recipient LIKE ?1 OR registration LIKE ?1 OR code LIKE ?1 OR model LIKE ?1 OR category LIKE ?1
+    `SELECT id, code, recipient, registration, category, model, event_date, issued_at, updated_at, issued_by, issued_by_name, data FROM certificates
+     WHERE (recipient LIKE ?1 OR registration LIKE ?1 OR code LIKE ?1 OR model LIKE ?1 OR category LIKE ?1)
+       AND (?2 = '' OR issued_by = ?2)
      ORDER BY updated_at DESC LIMIT 500`,
   )
-    .bind(q)
+    .bind(q, by)
     .all<{ data: string; [k: string]: unknown }>();
   return c.json(results.map((r) => ({ ...r, data: JSON.parse(r.data) })));
+});
+
+// Quem já emitiu certificados (para o filtro de "Emitidos")
+app.get('/api/certificates/issuers', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT issued_by AS id, MAX(issued_by_name) AS name, COUNT(*) AS n FROM certificates WHERE issued_by IS NOT NULL GROUP BY issued_by ORDER BY name`,
+  ).all();
+  return c.json(results);
 });
 
 app.post('/api/certificates', async (c) => {
@@ -400,6 +351,7 @@ app.post('/api/certificates', async (c) => {
   const list = Array.isArray(body.certificates) ? body.certificates.slice(0, 500) : [];
   if (!list.length) return c.json({ ok: false, message: 'Nada para salvar.' }, 400);
   const t = now();
+  const me = c.get('user');
   const stmts = [];
   for (const cert of list) {
     const id = clean(cert.id, 80);
@@ -409,10 +361,10 @@ app.post('/api/certificates', async (c) => {
     if (data.length > 100_000) return c.json({ ok: false, message: 'Dados do certificado grandes demais.' }, 413);
     stmts.push(
       c.env.DB.prepare(
-        `INSERT INTO certificates (id, code, recipient, registration, category, model, event_date, data, issued_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        `INSERT INTO certificates (id, code, recipient, registration, category, model, event_date, data, issued_at, updated_at, issued_by, issued_by_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11)
          ON CONFLICT(id) DO UPDATE SET recipient = ?3, registration = ?4, category = ?5, model = ?6, event_date = ?7, data = ?8, updated_at = ?9`,
-      ).bind(id, code, clean(cert.recipientName) || '(sem nome)', clean(cert.recipientRegistration, 60) || null, clean(cert.category, 100), clean(cert.model, 150), clean(cert.date, 20) || null, data, t),
+      ).bind(id, code, clean(cert.recipientName) || '(sem nome)', clean(cert.recipientRegistration, 60) || null, clean(cert.category, 100), clean(cert.model, 150), clean(cert.date, 20) || null, data, t, me.id, me.name),
     );
   }
   await c.env.DB.batch(stmts);
@@ -420,7 +372,9 @@ app.post('/api/certificates', async (c) => {
 });
 
 app.delete('/api/certificates/:id', async (c) => {
+  const cert = await c.env.DB.prepare('SELECT recipient, model, code FROM certificates WHERE id = ?').bind(c.req.param('id')).first<{ recipient: string; model: string; code: string }>();
   await c.env.DB.prepare('DELETE FROM certificates WHERE id = ?').bind(c.req.param('id')).run();
+  if (cert) await audit(c, 'Excluiu certificado', `${cert.recipient} — ${cert.model} (${cert.code})`);
   return c.json({ ok: true });
 });
 

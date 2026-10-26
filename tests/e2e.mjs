@@ -20,16 +20,37 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 
+const ADMIN = { name: 'Admin Teste', email: 'admin@gelb.test', pass: 'senha-admin-123' };
+
+// Primeiro acesso: cria o administrador com a chave de instalação
 await page.goto(BASE);
+await page.waitForSelector('#setup-form:not([hidden])');
+check(true, 'banco zerado abre o primeiro acesso');
+await page.fill('#setup-key', 'chave-errada');
+await page.fill('#setup-name', ADMIN.name);
+await page.fill('#setup-email', ADMIN.email);
+await page.fill('#setup-pass', ADMIN.pass);
+await page.fill('#setup-pass2', ADMIN.pass);
+await page.click('#setup-form button[type=submit]');
+await page.waitForSelector('#login-error:not([hidden])');
+check((await page.textContent('#login-error')).includes('incorreta'), 'chave de instalação errada é recusada');
+await page.fill('#setup-key', PASS);
+await page.click('#setup-form button[type=submit]');
+await page.waitForSelector('#app:not([hidden])');
+check((await page.textContent('#who-name')) === ADMIN.name && !(await page.locator('#tab-btn-usuarios').isHidden()), 'administrador criado e logado (vê "Usuários")');
+
+// Sair e entrar de novo por e-mail e senha
+await page.click('.who [data-logout]');
+await page.waitForSelector('#login-form:not([hidden])');
+await page.fill('#login-email', ADMIN.email);
 await page.fill('#login-pass', 'errada');
 await page.click('#login-form button[type=submit]');
 await page.waitForSelector('#login-error:not([hidden])');
-check((await page.textContent('#login-error')).includes('incorreta'), 'senha errada é recusada');
-
-await page.fill('#login-pass', PASS);
+check((await page.textContent('#login-error')).includes('incorretos'), 'senha errada é recusada');
+await page.fill('#login-pass', ADMIN.pass);
 await page.click('#login-form button[type=submit]');
 await page.waitForSelector('#app:not([hidden])');
-check(true, 'login com a senha da diretoria');
+check(true, 'login com e-mail e senha');
 
 // Acolhida usa o modelo padrão embutido automaticamente
 await page.waitForSelector('.design.active');
@@ -219,6 +240,78 @@ check(saved.typography?.nome?.color === '#c62828' && saved.typography?.texto?.op
 const logoRes = await page.evaluate(() => fetch('/api/logo').then((r) => r.headers.get('content-type')));
 check(logoRes === 'image/png', 'logo enviada é servida em /api/logo');
 
+// Usuários: administrador cria o acesso; a pessoa entra com a senha provisória e cria a dela
+await page.click('[data-tab=usuarios]');
+await page.waitForSelector('.user-row');
+await page.click('#user-new');
+await page.fill('#user-name', 'Maria Diretoria');
+await page.fill('#user-email', 'Maria@GELB.test');
+await page.click('#user-save');
+await page.waitForSelector('#user-access:not([hidden])');
+const temp = (await page.textContent('.temp-pass')).trim();
+check(/^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/.test(temp), `senha provisória gerada (${temp})`);
+check((await page.inputValue('#user-access textarea')).includes(temp), 'mensagem pronta para enviar traz a senha');
+await page.screenshot({ path: `${OUT}/12-usuarios.png`, fullPage: true });
+
+const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 1000 }, acceptDownloads: true });
+const maria = await ctx2.newPage();
+maria.on('pageerror', (e) => errors.push('maria: ' + e.message));
+await maria.goto(BASE);
+await maria.fill('#login-email', 'maria@gelb.test');
+await maria.fill('#login-pass', temp);
+await maria.click('#login-form button[type=submit]');
+await maria.waitForSelector('#change-form:not([hidden])');
+check(true, 'senha provisória pede para criar a senha');
+const blocked = await maria.evaluate(() => fetch('/api/settings').then((r) => r.status));
+check(blocked === 403, 'antes de criar a senha, o sistema fica bloqueado');
+await maria.fill('#change-pass', temp);
+await maria.fill('#change-pass2', temp);
+await maria.click('#change-form button[type=submit]');
+await maria.waitForSelector('#login-error:not([hidden])');
+check((await maria.textContent('#login-error')).includes('diferente'), 'não aceita repetir a senha provisória');
+await maria.fill('#change-pass', 'senha-da-maria');
+await maria.fill('#change-pass2', 'senha-da-maria');
+await maria.click('#change-form button[type=submit]');
+await maria.waitForSelector('#app:not([hidden])');
+check(await maria.locator('#tab-btn-usuarios').isHidden(), 'usuário comum não vê "Usuários"');
+const usersApi = await maria.evaluate(() => fetch('/api/users').then((r) => r.status));
+check(usersApi === 403, 'usuário comum não acessa a gestão pela API');
+await maria.waitForSelector('.design.active');
+await maria.fill('#f-recipientName', 'Lucas da Maria');
+const [dlm] = await Promise.all([maria.waitForEvent('download'), maria.click('[data-emit=png]')]);
+await dlm.path();
+
+await page.click('[data-tab=emitidos]');
+await page.waitForSelector('.hcard');
+await page.fill('#history-search', '');
+await page.waitForTimeout(600);
+await page.selectOption('#history-by', { label: 'Emitidos por Maria Diretoria (1)' });
+await page.waitForFunction(() => document.querySelectorAll('.hcard').length === 1 && document.querySelector('#history-list').textContent.includes('Lucas da Maria'), null, { timeout: 10000 }).catch(() => null);
+const cards = await page.locator('.hcard').allTextContents();
+check(cards.length === 1 && cards[0].includes('Lucas da Maria') && cards[0].includes('Emitido por Maria Diretoria'), 'Emitidos mostra e filtra quem emitiu');
+
+await page.click('[data-tab=usuarios]');
+await page.waitForFunction(() => document.querySelector('#audit-list').textContent.includes('Trocou a própria senha'), null, { timeout: 10000 }).catch(() => null);
+const auditText = await page.textContent('#audit-list');
+check(auditText.includes('Criou usuário') && auditText.includes('Maria Diretoria') && auditText.includes('Trocou a própria senha'), 'histórico de alterações registra as ações');
+const mariaRow = page.locator('.user-row', { hasText: 'Maria Diretoria' });
+check((await mariaRow.textContent()).includes('Último acesso') && !(await mariaRow.textContent()).includes('nunca entrou'), 'lista mostra o último acesso');
+await mariaRow.locator('[data-u-act=off]').click();
+await page.click('#confirm-yes');
+await page.waitForSelector('.user-row.off');
+check(true, 'administrador desativa o acesso');
+await maria.click('[data-tab=emitidos]');
+await maria.waitForSelector('#login-form:not([hidden])');
+check(true, 'quem foi desativado sai do sistema na hora');
+await maria.fill('#login-email', 'maria@gelb.test');
+await maria.fill('#login-pass', 'senha-da-maria');
+await maria.click('#login-form button[type=submit]');
+await maria.waitForFunction(() => document.querySelector('#login-error').textContent.includes('desativado'), null, { timeout: 10000 }).catch(() => null);
+check((await maria.textContent('#login-error')).includes('desativado'), 'login de desativado avisa para falar com o administrador');
+const selfOff = await page.evaluate(async (id) => (await fetch('/api/users/' + id, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: false }) })).status, (await page.evaluate(() => fetch('/api/me').then((r) => r.json()))).user.id);
+check(selfOff === 400, 'administrador não consegue desativar a si mesmo');
+await page.screenshot({ path: `${OUT}/13-usuarios-historico.png`, fullPage: true });
+
 // Celular
 const m = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await m.context().addCookies(await ctx.cookies());
@@ -237,6 +330,18 @@ const loginLogoOk = await anon.evaluate(() => {
 check(loginLogoOk, 'tela de entrada mostra a logo enviada');
 await anon.screenshot({ path: `${OUT}/11-entrada.png` });
 await m.screenshot({ path: `${OUT}/09-celular.png`, fullPage: true });
+
+// Recuperação: administrador que esqueceu a senha entra com a chave de instalação e cria outra
+const ctx3 = await browser.newContext();
+const rec = await ctx3.newPage();
+await rec.goto(BASE);
+await rec.fill('#login-email', ADMIN.email);
+await rec.fill('#login-pass', PASS);
+await rec.click('#login-form button[type=submit]');
+await rec.waitForSelector('#change-form:not([hidden])');
+check(true, 'chave de instalação recupera o acesso do administrador');
+const userKey = await ctx3.request.post(`${BASE}/api/login`, { data: { email: 'maria@gelb.test', password: PASS } });
+check(userKey.status() === 401, 'chave de instalação não serve para usuário comum');
 
 check(errors.length === 0, `sem erros de JavaScript${errors.length ? ': ' + errors.join(' | ') : ''}`);
 await browser.close();

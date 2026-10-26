@@ -279,3 +279,37 @@ dialog::backdrop { background: rgba(15, 23, 42, .6); }
   .rows td.del { grid-row: 1; grid-column: 2; }
   .rows td:not(.del) { grid-column: 1; }
 }
+
+/* ---------- usuários ---------- */
+.login-form { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.login-form .btn-lg { margin-top: 6px; }
+.login-form .link { align-self: center; }
+.login-note { background: #eef3fb; border-left: 4px solid var(--gold); padding: 10px 12px; border-radius: 8px; font-size: .92rem; color: var(--text) !important; }
+.login-note code { font-size: .85em; }
+.who { display: flex; align-items: center; gap: 8px; color: #dbe5f5; font-weight: 600; font-size: .9rem; }
+.user-list { display: flex; flex-direction: column; gap: 10px; }
+.user-row { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; }
+.user-row.off { background: #f8fafc; opacity: .75; }
+.user-row h3 { margin: 0; font-size: 1rem; color: var(--navy); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.user-row .meta { color: var(--muted); font-size: .85rem; }
+.user-row .actions { margin: 0; justify-content: flex-end; }
+.badge.admin { background: #dbeafe; color: #1e3a8a; }
+.badge.off { background: #fee2e2; color: #991b1b; }
+.badge.temp { background: #fef3c7; color: #92400e; }
+.access-card { background: #ecfdf5; border: 2px solid #34d399; border-radius: 12px; padding: 16px; margin: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.access-card h3 { margin: 0; color: #065f46; }
+.access-card textarea { font-family: inherit; font-size: .92rem; background: #fff; }
+.temp-pass { font-family: "Courier New", monospace; font-size: 1.3rem; font-weight: 800; letter-spacing: 1px; background: #fff; border: 1px dashed #34d399; padding: 6px 12px; border-radius: 8px; align-self: flex-start; }
+.audit-list { display: flex; flex-direction: column; }
+.audit-item { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: .92rem; }
+.audit-item time { color: var(--muted); font-size: .85rem; }
+.audit-item .det { color: var(--muted); }
+.issuer { color: var(--muted); font-size: .85rem; }
+#history-by { width: auto; }
+@media (max-width: 640px) {
+  .user-row { grid-template-columns: 1fr; }
+  .user-row .actions { justify-content: flex-start; }
+  .audit-item { grid-template-columns: 1fr; gap: 2px; }
+  .who #who-name { display: none; }
+}
+#audit-user { width: auto; min-width: 220px; }

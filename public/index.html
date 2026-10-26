@@ -12,18 +12,50 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-  <!-- LOGIN -->
+  <!-- ENTRADA: login, primeiro acesso e troca da senha provisória -->
   <section id="login" class="login" hidden>
-    <form class="login-card" id="login-form">
+    <div class="login-card">
       <img src="/api/logo" alt="Logo do GELB 32/SC" width="88" height="88" class="brand-logo">
       <h1>Gerador de Certificados</h1>
       <p>Grupo Escoteiro Leões de Blumenau · GELB 32/SC</p>
-      <label for="login-pass">Senha da diretoria</label>
-      <input id="login-pass" type="password" autocomplete="current-password" required>
+
+      <form id="login-form" class="login-form">
+        <label for="login-email">E-mail</label>
+        <input id="login-email" type="email" autocomplete="username" required>
+        <label for="login-pass">Senha</label>
+        <input id="login-pass" type="password" autocomplete="current-password" required>
+        <button class="btn btn-primary btn-lg" type="submit">Entrar</button>
+        <p class="hint">Esqueceu a senha? Peça ao administrador uma senha nova.</p>
+      </form>
+
+      <form id="setup-form" class="login-form" hidden>
+        <p class="login-note"><strong>Primeiro acesso.</strong> Crie a conta do administrador. A chave de instalação é a senha guardada na Cloudflare como <code>APP_PASSWORD</code>.</p>
+        <label for="setup-key">Chave de instalação</label>
+        <input id="setup-key" type="password" autocomplete="off" required>
+        <label for="setup-name">Seu nome</label>
+        <input id="setup-name" autocomplete="name" required>
+        <label for="setup-email">Seu e-mail</label>
+        <input id="setup-email" type="email" autocomplete="username" required>
+        <label for="setup-pass">Crie sua senha (mínimo 8 caracteres)</label>
+        <input id="setup-pass" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="setup-pass2">Repita a senha</label>
+        <input id="setup-pass2" type="password" autocomplete="new-password" minlength="8" required>
+        <button class="btn btn-primary btn-lg" type="submit">Criar administrador e entrar</button>
+      </form>
+
+      <form id="change-form" class="login-form" hidden>
+        <p class="login-note">Olá, <strong id="change-name"></strong>! Você entrou com uma senha provisória. Crie a sua senha para continuar — só você vai saber qual é.</p>
+        <label for="change-pass">Nova senha (mínimo 8 caracteres)</label>
+        <input id="change-pass" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="change-pass2">Repita a nova senha</label>
+        <input id="change-pass2" type="password" autocomplete="new-password" minlength="8" required>
+        <button class="btn btn-primary btn-lg" type="submit">Salvar senha e entrar</button>
+        <button class="link" type="button" data-logout>Sair</button>
+      </form>
+
       <p class="form-error" id="login-error" hidden></p>
-      <button class="btn btn-primary btn-lg" type="submit">Entrar</button>
       <a class="muted-link" href="/validar/">Quero conferir se um certificado é verdadeiro</a>
-    </form>
+    </div>
   </section>
 
   <!-- APLICATIVO -->
@@ -41,8 +73,13 @@
         <button data-tab="lote">Montar impressão</button>
         <button data-tab="emitidos">Emitidos</button>
         <button data-tab="config">Configurações</button>
+        <button data-tab="usuarios" id="tab-btn-usuarios" hidden>Usuários</button>
       </nav>
-      <button class="btn btn-ghost btn-sm" id="logout">Sair</button>
+      <div class="who">
+        <span id="who-name"></span>
+        <button class="btn btn-ghost btn-sm" type="button" id="my-password-open">Minha senha</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-logout>Sair</button>
+      </div>
     </header>
 
     <main>
@@ -173,9 +210,45 @@
         <div class="panel">
           <div class="panel-head">
             <h2>Certificados emitidos</h2>
-            <input type="search" id="history-search" placeholder="Buscar por nome, registro, modelo ou código">
+            <div class="row-wrap" style="margin:0">
+              <input type="search" id="history-search" placeholder="Buscar por nome, registro, modelo ou código">
+              <select id="history-by" aria-label="Emitido por"><option value="">Emitidos por todos</option></select>
+            </div>
           </div>
           <div id="history-list" class="history"></div>
+        </div>
+      </section>
+
+      <!-- ============ USUÁRIOS (só administradores) ============ -->
+      <section id="tab-usuarios" class="tab" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Usuários</h2>
+            <button class="btn btn-primary btn-sm" type="button" id="user-new">＋ Novo usuário</button>
+          </div>
+          <p class="hint">Todos os usuários emitem certificados, montam impressões e mexem em modelos e configurações. Só administradores veem esta área.</p>
+          <form id="user-form" class="tpl-form" hidden>
+            <div class="form-grid">
+              <label>Nome<input id="user-name" required autocomplete="off"></label>
+              <label>E-mail<input id="user-email" type="email" required autocomplete="off"></label>
+            </div>
+            <label class="check" style="margin-top:12px"><input type="checkbox" id="user-admin"> Administrador (pode gerenciar usuários e ver o histórico de alterações)</label>
+            <p class="form-error" id="user-error" hidden></p>
+            <div class="actions">
+              <button class="btn btn-primary" type="submit" id="user-save">Criar acesso</button>
+              <button class="btn btn-ghost" type="button" id="user-cancel">Cancelar</button>
+            </div>
+          </form>
+          <div id="user-access" class="access-card" hidden></div>
+          <div id="user-list" class="user-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Histórico de alterações</h2>
+            <select id="audit-user" aria-label="Filtrar por pessoa"><option value="">Todas as pessoas</option></select>
+          </div>
+          <div id="audit-list" class="audit-list"></div>
         </div>
       </section>
 
@@ -331,6 +404,35 @@
         <div id="le-fields" class="le-fields"></div>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="user-edit" class="confirm">
+    <form id="user-edit-form">
+      <h2>Editar usuário</h2>
+      <label>Nome<input id="ue-name" required></label>
+      <label style="margin-top:10px">E-mail<input id="ue-email" type="email" required></label>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="ue-admin"> Administrador</label>
+      <p class="form-error" id="ue-error" hidden></p>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" id="ue-cancel">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="my-password" class="confirm">
+    <form id="my-password-form">
+      <h2>Trocar minha senha</h2>
+      <label>Senha atual<input id="mp-current" type="password" autocomplete="current-password" required></label>
+      <label style="margin-top:10px">Nova senha (mínimo 8 caracteres)<input id="mp-new" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label style="margin-top:10px">Repita a nova senha<input id="mp-new2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p class="form-error" id="mp-error" hidden></p>
+      <p class="status" id="mp-status"></p>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" id="mp-cancel">Fechar</button>
+        <button class="btn btn-primary" type="submit">Salvar nova senha</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="confirm" class="confirm">

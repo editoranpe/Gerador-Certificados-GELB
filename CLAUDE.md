@@ -6,7 +6,8 @@
 - Ao concluir cada parte do trabalho (com `npm run build` passando), envie para a `main` além da branch de trabalho.
 - Banco D1 de produção: `gelb-certificados-db` (id no `wrangler.toml`). O esquema é criado/atualizado pelo próprio Worker (`ensureSchema` em `src/index.ts`) e deve continuar idempotente.
 - O app antigo do AI Studio (React/Firebase) está guardado na branch `ai-studio-original`, só para consulta.
-- Segredos: `APP_PASSWORD` (senha da diretoria) e `SESSION_SECRET` (32+ caracteres).
+- Segredos: `APP_PASSWORD` (chave de instalação: cria o 1º administrador e recupera administrador) e `SESSION_SECRET` (32+ caracteres).
+- Login por e-mail e senha, usuários e histórico de alterações em `src/auth.ts`; registrar com `audit()` toda alteração nova que valha acompanhar.
 
 ## Projeto
 - Cloudflare Workers + Hono (só API em `src/index.ts`), D1, app em HTML/JS puro em `public/`.

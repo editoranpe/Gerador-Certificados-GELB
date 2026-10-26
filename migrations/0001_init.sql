@@ -61,3 +61,29 @@ CREATE TABLE IF NOT EXISTS fonts (
   data TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+-- Usuários da diretoria e histórico de alterações (o Worker também cria; ver src/auth.ts)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pass_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',      -- 'admin' | 'user'
+  active INTEGER NOT NULL DEFAULT 1,
+  must_change INTEGER NOT NULL DEFAULT 1, -- senha provisória: troca no próximo acesso
+  session_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  created_by TEXT,
+  last_login_at TEXT,
+  last_seen_at TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  user_id TEXT,
+  user_name TEXT,
+  action TEXT NOT NULL,
+  details TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
+-- certificates ganha issued_by e issued_by_name (quem emitiu), adicionadas pelo Worker
