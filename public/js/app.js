@@ -87,8 +87,9 @@
 
   /** Modelo de arte em uso (ou null = layout padrão GELB). */
   function currentTemplate(cert = state.cert) {
-    if (cert.design === 'padrao') return null;
     const list = templatesFor(cert);
+    // Havendo arte do GELB para este certificado, o layout padrão nem é oferecido
+    if (cert.design === 'padrao' && !list.length) return null;
     if (cert.design && cert.design !== 'auto') {
       const t = visibleTemplates().find((x) => x.id === cert.design);
       if (t) return t;
@@ -146,7 +147,7 @@
   function renderDesigns() {
     const list = templatesFor(state.cert);
     const current = currentTemplate();
-    const opts = [{ id: 'padrao', name: 'Layout padrão GELB' }, ...list.map((t) => ({ id: t.id, name: t.name, tpl: t }))];
+    const opts = list.length ? list.map((t) => ({ id: t.id, name: t.name, tpl: t })) : [{ id: 'padrao', name: 'Layout padrão GELB' }];
     $('#design-options').innerHTML = opts
       .map(
         (o) => `<button type="button" class="design ${(current ? current.id : 'padrao') === o.id ? 'active' : ''}" data-design="${esc(o.id)}">
@@ -486,7 +487,8 @@
     $('#blocks').innerHTML = blocks
       .map((b, i) => {
         const t = currentTemplate(b);
-        const designs = [['padrao', 'Layout padrão GELB'], ...templatesFor(b).map((x) => [x.id, x.name])];
+        const tpls = templatesFor(b);
+        const designs = tpls.length ? tpls.map((x) => [x.id, x.name]) : [['padrao', 'Layout padrão GELB']];
         const extras = (GELB.EXTRA_FIELDS[b.category] || []).filter((k) => k !== 'responsaveis');
         const showResp = hasResponsaveis(b);
         return `<article class="block" data-b="${i}">

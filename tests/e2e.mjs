@@ -55,6 +55,7 @@ check(true, 'login com e-mail e senha');
 // Acolhida usa o modelo padrão embutido automaticamente
 await page.waitForSelector('.design.active');
 check((await page.textContent('.design.active')).includes('Acolhida'), 'Acolhida abre com o modelo de arte padrão');
+check((await page.locator('[data-design="padrao"]').count()) === 0, 'com arte do GELB, o layout padrão não aparece');
 
 await page.fill('#f-recipientName', 'Gabriel Schmidt Silva');
 await page.fill('[data-field=responsaveis]', 'Carlos Silva e Maria Schmidt');
@@ -77,7 +78,7 @@ check((await page.textContent('#cert-code')).trim() !== code, 'nova pessoa receb
 
 // Layout padrão GELB + categoria Especialidades
 await page.click('[data-cat="Especialidades"]');
-await page.click('[data-design="padrao"]');
+check(await page.locator('[data-design="padrao"].active').count() === 1, 'sem arte enviada, usa o layout padrão');
 await page.fill('[data-field=nomeEspecialidade]', 'Radioamadorismo');
 await page.selectOption('[data-field=nivelConquistado]', '2');
 await page.waitForTimeout(600);
