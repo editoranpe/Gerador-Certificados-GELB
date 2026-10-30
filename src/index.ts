@@ -202,6 +202,17 @@ interface TemplateInput {
 
 const clean = (v: unknown, max = 200) => String(v ?? '').trim().slice(0, max);
 
+/** Garante que cada certificado com arte tenha uma marcada como padrão (a mais recente enviada pela diretoria). */
+async function ensureDefault(db: D1Database, category: string, model: string) {
+  const has = await db.prepare('SELECT id FROM templates WHERE category = ? AND model = ? AND hidden = 0 AND is_default = 1').bind(category, model).first();
+  if (has) return;
+  const next = await db
+    .prepare('SELECT id FROM templates WHERE category = ? AND model = ? AND hidden = 0 ORDER BY builtin ASC, updated_at DESC LIMIT 1')
+    .bind(category, model)
+    .first<{ id: string }>();
+  if (next) await db.prepare('UPDATE templates SET is_default = 1 WHERE id = ?').bind(next.id).run();
+}
+
 async function clearOtherDefaults(db: D1Database, id: string) {
   const t = await db.prepare('SELECT category, model FROM templates WHERE id = ?').bind(id).first<{ category: string; model: string }>();
   if (t) await db.prepare('UPDATE templates SET is_default = 0 WHERE category = ? AND model = ? AND id <> ?').bind(t.category, t.model, id).run();
@@ -253,7 +264,8 @@ app.put('/api/templates/:id', async (c) => {
   vals.push(id);
   await c.env.DB.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?${vals.length}`).bind(...vals).run();
   if (b.isDefault) await clearOtherDefaults(c.env.DB, id);
-  const tpl = await c.env.DB.prepare('SELECT name FROM templates WHERE id = ?').bind(id).first<{ name: string }>();
+  const tpl = await c.env.DB.prepare('SELECT name, category, model FROM templates WHERE id = ?').bind(id).first<{ name: string; category: string; model: string }>();
+  if (tpl) await ensureDefault(c.env.DB, tpl.category, tpl.model);
   const what = b.hidden === false ? 'Restaurou modelo' : b.isDefault ? 'Definiu modelo como padrão' : b.layout !== undefined ? 'Ajustou posições do modelo' : 'Editou modelo';
   await audit(c, what, tpl?.name || id);
   return c.json({ ok: true });
@@ -261,14 +273,17 @@ app.put('/api/templates/:id', async (c) => {
 
 app.delete('/api/templates/:id', async (c) => {
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT builtin, name FROM templates WHERE id = ?').bind(id).first<{ builtin: number; name: string }>();
+  const row = await c.env.DB.prepare('SELECT builtin, name, category, model FROM templates WHERE id = ?').bind(id).first<{ builtin: number; name: string; category: string; model: string }>();
   if (row?.builtin) {
     // O modelo embutido não é apagado de verdade: fica oculto e pode ser restaurado.
-    await c.env.DB.prepare('UPDATE templates SET hidden = 1, updated_at = ? WHERE id = ?').bind(now(), id).run();
+    await c.env.DB.prepare('UPDATE templates SET hidden = 1, is_default = 0, updated_at = ? WHERE id = ?').bind(now(), id).run();
   } else {
     await c.env.DB.batch([c.env.DB.prepare('DELETE FROM templates WHERE id = ?').bind(id), c.env.DB.prepare('DELETE FROM template_files WHERE id = ?').bind(id)]);
   }
-  if (row) await audit(c, 'Excluiu modelo', row.name);
+  if (row) {
+    await ensureDefault(c.env.DB, row.category, row.model);
+    await audit(c, 'Excluiu modelo', row.name);
+  }
   return c.json({ ok: true });
 });
 

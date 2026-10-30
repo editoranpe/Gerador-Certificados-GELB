@@ -93,7 +93,14 @@
       const t = visibleTemplates().find((x) => x.id === cert.design);
       if (t) return t;
     }
-    return list.find((t) => t.isDefault) || null;
+    return autoTemplate(list);
+  }
+
+  /** Arte usada automaticamente: a marcada como padrão; senão a enviada mais recente (as artes da diretoria vêm antes da embutida). */
+  function autoTemplate(list) {
+    if (!list.length) return null;
+    const byNewest = [...list].sort((a, b) => a.builtin - b.builtin || String(b.version).localeCompare(String(a.version)));
+    return list.find((t) => t.isDefault) || byNewest[0];
   }
 
   function verifyUrl(code) {
@@ -1107,7 +1114,7 @@
           <div class="body">
             <h3>${esc(t.name)}</h3>
             <div class="hint" style="margin:0">${esc(t.category)} › ${esc(t.model)}</div>
-            <div>${t.hidden ? '<span class="badge gray">Excluído</span>' : t.isDefault ? '<span class="badge">Usado automaticamente</span>' : '<span class="badge gray">Opcional</span>'}</div>
+            <div>${t.hidden ? '<span class="badge gray">Excluído</span>' : autoTemplate(templatesFor(t))?.id === t.id ? '<span class="badge">Usado automaticamente</span>' : '<span class="badge gray">Opcional</span>'}</div>
             ${t.description ? `<div class="hint" style="margin:0">${esc(t.description)}</div>` : ''}
             <div class="actions">
               ${
@@ -1115,7 +1122,7 @@
                   ? `<button class="btn btn-ghost btn-sm" data-tpl-restore="${esc(t.id)}">Restaurar</button>`
                   : `<button class="btn btn-primary btn-sm" data-tpl-use="${esc(t.id)}">Usar agora</button>
                      <button class="btn btn-ghost btn-sm" data-tpl-layout="${esc(t.id)}">Ajustar posições</button>
-                     ${t.isDefault ? '' : `<button class="btn btn-ghost btn-sm" data-tpl-default="${esc(t.id)}">Usar sempre</button>`}
+                     ${autoTemplate(templatesFor(t))?.id === t.id ? '' : `<button class="btn btn-ghost btn-sm" data-tpl-default="${esc(t.id)}">Usar sempre</button>`}
                      ${t.hasOriginal ? `<a class="btn btn-ghost btn-sm" href="/api/templates/${esc(t.id)}/original">Baixar original</a>` : ''}
                      <button class="btn btn-ghost btn-sm" data-tpl-del="${esc(t.id)}">Excluir</button>`
               }

@@ -198,6 +198,16 @@ await page.fill('#f-recipientName', 'Pedro Henrique');
 await page.waitForTimeout(800);
 await page.locator('#tab-emitir .preview-card').screenshot({ path: `${OUT}/08-modelo-enviado.png` });
 check((await page.textContent('.design.active')).includes('Promessa'), 'emissão usa o modelo enviado');
+// Mesmo sem estar marcada como padrão (ex.: o padrão foi excluído), a arte enviada vem selecionada
+await page.evaluate((id) => fetch('/api/templates/' + id, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ isDefault: false }) }), promessa.id);
+await page.reload();
+await page.waitForSelector('#app:not([hidden])');
+await page.click('[data-cat="Promessas"]');
+await page.click('[data-model="Promessa (Geral)"]');
+await page.waitForTimeout(300);
+check((await page.textContent('.design.active')).includes('Promessa'), 'arte enviada vem selecionada por padrão');
+const tplAfter = await page.evaluate(() => fetch('/api/templates').then((r) => r.json()));
+check(tplAfter.find((t) => t.id === promessa.id).isDefault, 'servidor volta a marcar a arte como padrão');
 
 // Configurações salvas
 await page.click('[data-tab=config]');
